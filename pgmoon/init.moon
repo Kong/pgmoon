@@ -2,6 +2,8 @@ socket = require "pgmoon.socket"
 import insert from table
 
 import rshift, lshift, band, bxor from require "pgmoon.bit"
+pl_file = require "pl.file"
+ngx_ssl = require "ngx.ssl"
 
 unpack = table.unpack or unpack
 
@@ -250,9 +252,16 @@ class Postgres
     out
 
   create_luasec_opts: =>
-    {
-      key: @config.key
-      certificate: @config.cert
+    key = @config.key
+    cert = @config.cert
+
+    if @sock_type == "nginx" and key and cert
+      key = assert(ngx_ssl.parse_pem_priv_key(pl_file.read(key, true)))
+      cert = assert(ngx_ssl.parse_pem_cert(pl_file.read(cert, true)))
+
+    return {
+      key: key
+      certificate: cert
       cafile: @config.cafile
       protocol: @config.ssl_version
       verify: @config.ssl_verify and "peer" or "none"
@@ -757,7 +766,12 @@ class Postgres
     if t == MSG_TYPE.status
       switch @sock_type
         when "nginx"
-          @sock\sslhandshake false, nil, @config.ssl_verify
+          luasec_opts = @create_luasec_opts!
+          @sock\tlshandshake {
+            verify: @ssl_verify,
+            client_cert: luasec_opts.cert,
+            client_priv_key: luasec_opts.key,
+          }
         when "luasocket"
           @sock\sslhandshake @config.luasec_opts or @create_luasec_opts!
         when "cqueues"
