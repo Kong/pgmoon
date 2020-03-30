@@ -779,6 +779,15 @@ class Postgres
         else
           error "don't know how to do ssl handshake for socket type: #{@sock_type}"
     elseif t == MSG_TYPE.error or @config.ssl_required
+      if @sock_type == "nginx"
+        @sock\tlshandshake {
+          verify: @ssl_verify,
+          client_cert: @luasec_opts.cert,
+          client_priv_key: @luasec_opts.key,
+        }
+      else
+        @sock\sslhandshake @ssl_verify, @luasec_opts
+    elseif t == MSG_TYPE.error or @ssl_required
       @disconnect!
       nil, "the server does not support SSL connections"
     else

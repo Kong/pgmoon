@@ -816,6 +816,16 @@ do
           return error("don't know how to do ssl handshake for socket type: " .. tostring(self.sock_type))
         end
       elseif t == MSG_TYPE.error or self.config.ssl_required then
+        if self.sock_type == "nginx" then
+          return self.sock:tlshandshake({
+            verify = self.ssl_verify,
+            client_cert = self.luasec_opts.cert,
+            client_priv_key = self.luasec_opts.key
+          })
+        else
+          return self.sock:sslhandshake(self.ssl_verify, self.luasec_opts)
+        end
+      elseif t == MSG_TYPE.error or self.ssl_required then
         self:disconnect()
         return nil, "the server does not support SSL connections"
       else
