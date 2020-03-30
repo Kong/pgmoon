@@ -6,6 +6,8 @@ do
   local _obj_0 = require("pgmoon.bit")
   rshift, lshift, band, bxor = _obj_0.rshift, _obj_0.lshift, _obj_0.band, _obj_0.bxor
 end
+local pl_file = require("pl.file")
+local ssl = require("ngx.ssl")
 local unpack = table.unpack or unpack
 local DEBUG = false
 local VERSION = "1.18.0"
@@ -395,9 +397,15 @@ do
       return out
     end,
     create_luasec_opts = function(self)
+      local key = self.config.key
+      local cert = self.config.cert
+      if self.config.sock_type == "nginx" and key and cert then
+        key = assert(ssl.parse_pem_priv_key(pl_file.read(key, true)))
+        cert = assert(ssl.parse_pem_cert(pl_file.read(cert, true)))
+      end
       return {
-        key = self.config.key,
-        certificate = self.config.cert,
+        key = key,
+        certificate = cert,
         cafile = self.config.cafile,
         protocol = self.config.ssl_version,
         verify = self.config.ssl_verify and "peer" or "none"
@@ -482,7 +490,7 @@ do
           else
             local pem, signature
             if self.sock_type == "nginx" then
-              local ssl = require("resty.openssl.ssl").from_socket(self.sock)
+              ssl = require("resty.openssl.ssl").from_socket(self.sock)
               local server_cert = ssl:get_peer_certificate()
               pem, signature = server_cert:to_PEM(), server_cert:get_signature_name()
             else
@@ -1124,10 +1132,16 @@ do
         local _exp_0 = self.sock_type
         if "nginx" == _exp_0 then
           local server_name
-          if not (is_ip_address(self.config.host)) then
+          if not self.config.socket_path and not is_ip_address(self.config.host) then
             server_name = self.config.host
           end
-          return self.sock:sslhandshake(false, server_name, self.config.ssl_verify)
+          local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
+          return self.sock:tlshandshake({
+            verify = self.config.ssl_verify,
+            client_cert = luasec_opts.cert,
+            client_priv_key = luasec_opts.key,
+            server_name = server_name
+          })
         elseif "luasocket" == _exp_0 then
           return self.sock:sslhandshake(self.config.luasec_opts or self:create_luasec_opts())
         elseif "cqueues" == _exp_0 then
