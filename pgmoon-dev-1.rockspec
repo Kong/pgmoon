@@ -1,8 +1,9 @@
 package = "pgmoon"
-version = "dev-1"
+version = "2.1.1"
 
 source = {
-  url = "git://github.com/leafo/pgmoon.git"
+  url = "git://github.com/Kong/pgmoon.git",
+  tag = "2.1.1"
 }
 
 description = {
