@@ -6,8 +6,12 @@ do
   local _obj_0 = require("pgmoon.bit")
   rshift, lshift, band, bxor = _obj_0.rshift, _obj_0.lshift, _obj_0.band, _obj_0.bxor
 end
-local pl_file = require("pl.file")
-local ngx_ssl = require("ngx.ssl")
+local pl_file
+local ngx_ssl
+if ngx then
+  pl_file = require("pl.file")
+  ngx_ssl = require("ngx.ssl")
+end
 local unpack = table.unpack or unpack
 local VERSION = "2.2.0"
 local _len
