@@ -9,7 +9,7 @@ end
 local pl_file = require("pl.file")
 local ngx_ssl = require("ngx.ssl")
 local unpack = table.unpack or unpack
-local VERSION = "1.13.0"
+local VERSION = "2.2.0"
 local _len
 _len = function(thing, t)
   if t == nil then
