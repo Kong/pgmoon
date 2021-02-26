@@ -412,7 +412,14 @@ do
         certificate = cert,
         cafile = self.config.cafile,
         protocol = self.config.ssl_version,
-        verify = self.config.ssl_verify and "peer" or "none"
+        verify = self.config.ssl_verify and "peer" or "none",
+        ssl_version = opts.ssl_version or "any",
+        options = {
+          "all",
+          "no_sslv2",
+          "no_sslv3",
+          "no_tlsv1"
+        }
       }
     end,
     auth = function(self)
