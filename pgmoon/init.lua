@@ -14,7 +14,7 @@ if ngx then
 end
 local unpack = table.unpack or unpack
 local DEBUG = false
-local VERSION = "2.2.1"
+local VERSION = "2.2.2"
 local is_ip_address
 is_ip_address = function(host)
   if not (type(host) == "string") then
@@ -382,7 +382,7 @@ do
     end,
     create_cqueues_openssl_context = function(self)
       if not (self.config.ssl_verify ~= nil or self.config.cert or self.config.key or self.config.ssl_version) then
-        return
+        return 
       end
       local ssl_context = require("openssl.ssl.context")
       local out = ssl_context.new(self.config.ssl_version)
@@ -413,7 +413,7 @@ do
         cafile = self.config.cafile,
         protocol = self.config.ssl_version,
         verify = self.config.ssl_verify and "peer" or "none",
-        ssl_version = opts.ssl_version or "any",
+        ssl_version = self.config.ssl_version or "any",
         options = {
           "all",
           "no_sslv2",
