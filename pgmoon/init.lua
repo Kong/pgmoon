@@ -382,7 +382,7 @@ do
     end,
     create_cqueues_openssl_context = function(self)
       if not (self.config.ssl_verify ~= nil or self.config.cert or self.config.key or self.config.ssl_version) then
-        return 
+        return
       end
       local ssl_context = require("openssl.ssl.context")
       local out = ssl_context.new(self.config.ssl_version)
