@@ -1103,12 +1103,7 @@ class Postgres
             @config.host
 
           luasec_opts = @config.luasec_opts or @create_luasec_opts!
-          @sock\tlshandshake {
-            verify: @config.ssl_verify
-            client_cert: luasec_opts.cert
-            client_priv_key: luasec_opts.key
-            server_name: server_name
-          }
+          @sock\setclientcert luasec_opts.certificate, luasec_opts.key
         when "luasocket"
           @sock\sslhandshake @config.luasec_opts or @create_luasec_opts!
         when "cqueues"
