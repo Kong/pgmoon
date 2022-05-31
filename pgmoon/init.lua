@@ -1147,7 +1147,15 @@ do
             server_name = self.config.host
           end
           local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
-          return self.sock:setclientcert(luasec_opts.certificate, luasec_opts.key)
+          if self.sock.setclientcert then
+            return self.sock:setclientcert(luasec_opts.certificate, luasec_opts.key)
+          else
+            return self.sock:tlshandshake({
+              verify = self.config.ssl_verify,
+              client_cert = luasec_opts.cert,
+              client_priv_key = luasec_opts.key
+            })
+          end
         elseif "luasocket" == _exp_0 then
           return self.sock:sslhandshake(self.config.luasec_opts or self:create_luasec_opts())
         elseif "cqueues" == _exp_0 then
