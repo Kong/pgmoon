@@ -14,7 +14,7 @@ if ngx then
 end
 local unpack = table.unpack or unpack
 local DEBUG = false
-local VERSION = "2.2.3"
+local VERSION = "2.3.0"
 local is_ip_address
 is_ip_address = function(host)
   if not (type(host) == "string") then
