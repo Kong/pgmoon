@@ -1111,12 +1111,15 @@ class Postgres
               return false, err_internal
             return @sock\sslhandshake false, server_name, @config.ssl_verify
           else
-            @sock\tlshandshake {
-              verify: @config.ssl_verify
-              client_cert: luasec_opts.certificate
-              client_priv_key: luasec_opts.key
-              server_name: server_name
-            }
+            if @sock.tlshandshake
+              return @sock\tlshandshake {
+                verify: @config.ssl_verify
+                client_cert: luasec_opts.certificate
+                client_priv_key: luasec_opts.key
+                server_name: server_name
+              }
+            else
+              return @sock\sslhandshake false, server_name, @config.ssl_verify
         when "luasocket"
           @sock\sslhandshake @config.luasec_opts or @create_luasec_opts!
         when "cqueues"
