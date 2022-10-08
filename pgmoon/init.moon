@@ -457,6 +457,12 @@ class Postgres
           -- around: OBJ_txt2nid is case sensitive
           original_name = signature
           signature = signature\lower!
+          -- Handle the case when the signature is e.g. ECDSA-with-SHA384
+          _, _, with_sig = signature\find("%-with%-(.*)")
+          if with_sig
+            signature = with_sig
+
+          -- upgrade the signature if necessary (also handle the case of s/RSA-SHA1/sha256)
           if signature\match("^md5") or signature\match("^sha1") or signature\match("sha1$") or signature\match("sha256$")
             signature = "sha256"
           elseif signature\match("sha384")

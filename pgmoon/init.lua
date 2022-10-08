@@ -458,6 +458,11 @@ do
             end
             local original_name = signature
             signature = signature:lower()
+            local _, with_sig
+            _, _, with_sig = signature:find("%-with%-(.*)")
+            if with_sig then
+              signature = with_sig
+            end
             if signature:match("^md5") or signature:match("^sha1") or signature:match("sha1$") or signature:match("sha256$") then
               signature = "sha256"
             elseif signature:match("sha384") then
@@ -809,7 +814,7 @@ do
           end
           insert(notifications, self:parse_notification(msg))
         elseif MSG_TYPE_B.parse_complete == _exp_0 or MSG_TYPE_B.bind_complete == _exp_0 or MSG_TYPE_B.close_complete == _exp_0 then
-          local _ = nil
+          local _scrap_0 = nil
         else
           if DEBUG then
             print("Unhandled message in query result: " .. tostring(t))
@@ -907,7 +912,7 @@ do
         local _len_0 = 1
         for i = 1, num_fields do
           local name = row_desc:match("[^%z]+", offset)
-          offset = offset + #name + 1
+          offset = offset + (#name + 1)
           local data_type = self:decode_int(row_desc:sub(offset + 6, offset + 6 + 3))
           data_type = self.PG_TYPES[data_type] or "string"
           local format = self:decode_int(row_desc:sub(offset + 16, offset + 16 + 1))
@@ -955,7 +960,7 @@ do
           elseif "boolean" == _exp_0 then
             value = value == "t"
           elseif "string" == _exp_0 then
-            local _ = nil
+            local _scrap_0 = nil
           else
             do
               local fn = self.type_deserializers[field_type]
