@@ -867,7 +867,7 @@ do
         return nil, err
       end
       if t == MSG_TYPE.status then
-        if self.sock_type == "nginx" then
+        if self.sock_type == "nginx" and self.sock.tlshandshake then
           return self.sock:tlshandshake({
             verify = self.ssl_verify,
             client_cert = self.luasec_opts.cert,

@@ -544,7 +544,7 @@ class Postgres
     return nil, err unless t
 
     if t == MSG_TYPE.status
-      if @sock_type == "nginx"
+      if @sock_type == "nginx" and @sock.tlshandshake
         @sock\tlshandshake {
           verify: @ssl_verify,
           client_cert: @luasec_opts.cert,
