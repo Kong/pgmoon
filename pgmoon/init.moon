@@ -16,7 +16,7 @@ unpack = table.unpack or unpack
 -- https://www.postgresql.org/docs/current/protocol-message-formats.html
 
 DEBUG = false
-VERSION = "2.3.1"
+VERSION = "2.3.2.0"
 
 -- SNI must not contain an IP literal (RFC 6066), so skip the server name
 -- for IPv4 and IPv6 hosts, matching libpq's behavior
