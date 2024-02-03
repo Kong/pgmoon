@@ -4,6 +4,7 @@ on: [push, pull_request]
 
 jobs:
   test:
+    timeout-minutes: ${{ fromJSON(vars.GHA_DEFAULT_TIMEOUT) }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -48,6 +49,7 @@ jobs:
 
 
   test_resty:
+    timeout-minutes: ${{ fromJSON(vars.GHA_DEFAULT_TIMEOUT) }}
     runs-on: ubuntu-latest
 
     strategy:
