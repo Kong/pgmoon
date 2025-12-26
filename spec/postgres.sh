@@ -3,6 +3,7 @@ set -eo pipefail
 
 pgroot=$(pwd)/pgdata
 port=9999
+socket_dir="/tmp/pgmoon-test-socket"
 
 postgres_version=${DOCKER_POSTGRES_VERSION:-latest}
 
@@ -25,7 +26,12 @@ function makecerts {
 }
 
 function start {
+  # Stop any existing container first
+  docker stop pgmoon-test > /dev/null 2>&1 || true
+
   INIT_SCRIPT=""
+  VOLUME_MOUNT=""
+  PORT_MAPPING="-p 127.0.0.1:$port:5432/tcp"
   SSL_ENV=""
 
   # a container from a previous run may still be going away, starting a new one
@@ -37,12 +43,24 @@ function start {
     SSL_ENV="-e PGMOON_TEST_CERT_DIGEST=${PGMOON_TEST_CERT_DIGEST:-sha384} -e PGMOON_TEST_CERT_TYPE=${PGMOON_TEST_CERT_TYPE:-rsa}"
   fi
 
+  if [ "$1" = "unix" ]; then
+    # Create socket directory if it doesn't exist
+    if [ ! -d "$socket_dir" ]; then
+      mkdir -p "$socket_dir"
+      chmod 777 "$socket_dir"
+    fi
+    VOLUME_MOUNT="-v $socket_dir:/var/run/postgresql"
+    # No TCP port mapping needed for unix socket mode
+    PORT_MAPPING=""
+  fi
+
   echo "$(tput setaf 4)Starting postgresql $postgres_version (docker run) $1 $(tput sgr0)"
   docker run --rm --name pgmoon-test \
-    -p 127.0.0.1:$port:5432/tcp \
+    $PORT_MAPPING \
     -e POSTGRES_PASSWORD=pgmoon \
     $SSL_ENV \
     $INIT_SCRIPT \
+    $VOLUME_MOUNT \
     -d \
     postgres:$postgres_version > /dev/null
 
@@ -50,16 +68,26 @@ function start {
   # -v "$pgroot:/var/lib/postgresql/data" \ # this can be used to inspect logs since we'll have the server data dir available after the sever stops
 
   echo "$(tput setaf 4)Waiting for server to be ready$(tput sgr0)"
-  waited=0
-  until (PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres PGPASSWORD=pgmoon psql -c 'SELECT pg_reload_conf()' 2> /dev/null); do
-    waited=$((waited + 1))
-    if [ $waited -gt $((READY_TIMEOUT * 5)) ]; then
-      echo "timed out after ${READY_TIMEOUT}s waiting for postgresql to be ready" >&2
-      docker logs pgmoon-test >&2 2>&1 | tail -20
-      return 1
-    fi
-    sleep 0.2
-  done
+  if [ "$1" = "unix" ]; then
+    # For unix socket mode, wait until socket file appears and postgres is ready
+    until [ -S "$socket_dir/.s.PGSQL.5432" ]; do
+      sleep 0.1
+    done
+    until docker exec pgmoon-test pg_isready -U postgres > /dev/null 2>&1; do
+      sleep 0.1
+    done
+  else
+    waited=0
+    until (PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres PGPASSWORD=pgmoon psql -c 'SELECT pg_reload_conf()' 2> /dev/null); do
+      waited=$((waited + 1))
+      if [ $waited -gt $((READY_TIMEOUT * 5)) ]; then
+        echo "timed out after ${READY_TIMEOUT}s waiting for postgresql to be ready" >&2
+        docker logs pgmoon-test >&2 2>&1 | tail -20
+        return 1
+      fi
+      sleep 0.2
+    done
+  fi
   echo "$(tput setaf 4)Sever is ready$(tput sgr0)"
 }
 
