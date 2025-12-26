@@ -33,7 +33,7 @@ ssl_cert_file = '$(pwd)/server.crt'
 ssl_key_file = '$(pwd)/server.key'
 ssl_min_protocol_version = 'TLSv1.2'
 password_encryption = 'scram-sha-256'
-" >> data/postgresql.conf
+" >> "$PGDATA/postgresql.conf"
 
 # Store the password with scram-sha-256 so that the server negotiates
 # SCRAM-SHA-256-PLUS and channel binding is exercised. Postgres images before
