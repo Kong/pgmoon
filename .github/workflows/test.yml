@@ -16,6 +16,7 @@ jobs:
         luaVersion: ["5.1", "5.2", "5.3", "5.4", "luajit-openresty"]
 
     env:
+      TERM: xterm
       PGUSER: postgres
       PGPASSWORD: postgres
       PGHOST: 127.0.0.1
@@ -60,6 +61,7 @@ jobs:
         postgresVersion: ["14"]
 
     env:
+      TERM: xterm
       PGUSER: postgres
       PGPASSWORD: postgres
       PGHOST: 127.0.0.1
