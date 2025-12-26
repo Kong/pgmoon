@@ -25,13 +25,13 @@ fi
 
 chmod og-rwx server.key
 
-# TLSv1 min version to mimic older versions of postgres
+# TLSv1.2 min version (TLSv1 and TLSv1.1 are disabled in OpenSSL 3)
 
 echo "
 ssl = on
 ssl_cert_file = '$(pwd)/server.crt'
 ssl_key_file = '$(pwd)/server.key'
-ssl_min_protocol_version = 'TLSv1'
+ssl_min_protocol_version = 'TLSv1.2'
 password_encryption = 'scram-sha-256'
 " >> data/postgresql.conf
 
