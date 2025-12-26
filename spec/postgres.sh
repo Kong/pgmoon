@@ -95,15 +95,6 @@ function start {
     done
   fi
   echo "$(tput setaf 4)Sever is ready$(tput sgr0)"
-
-  # Show container info for debugging
-  echo "$(tput setaf 4)Container status:$(tput sgr0)"
-  docker ps --filter name=pgmoon-test --format "{{.Status}}"
-
-  if [ "$1" = "unix" ]; then
-    echo "$(tput setaf 4)Socket directory contents:$(tput sgr0)"
-    ls -la "$socket_dir"
-  fi
 }
 
 function stop {
