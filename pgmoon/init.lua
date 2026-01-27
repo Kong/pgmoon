@@ -559,8 +559,7 @@ do
     end,
     oauthbearer_auth = function(self, msg)
       assert(self.config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth")
-      local OAuth
-      OAuth = require("pgmoon.oauth").OAuth
+      local OAuth = require("pgmoon.oauth")
       local valid, err = OAuth:validate_token(self.config.oauth_token)
       if not (valid) then
         return nil, err

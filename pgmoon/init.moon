@@ -568,7 +568,7 @@ class Postgres
   oauthbearer_auth: (msg) =>
     assert @config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth"
 
-    import OAuth from require "pgmoon.oauth"
+    OAuth = require "pgmoon.oauth"
 
     -- Validate the token
     valid, err = OAuth\validate_token @config.oauth_token

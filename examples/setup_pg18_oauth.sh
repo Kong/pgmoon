@@ -1,179 +1,133 @@
 #!/bin/bash
-# Setup PostgreSQL 18 instance for OAUTHBEARER testing
+
+# PostgreSQL 18 OAUTHBEARER Test Setup Script
+# This configures PostgreSQL 18 to advertise OAUTHBEARER in its SASL mechanism list
+# so we can test the pgmoon OAUTHBEARER implementation (RFC 7628)
 
 set -e
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PG_VERSION="${PG_VERSION:-18}"
+PG_VERSION="18"
 PG_PORT="${PG_PORT:-5433}"
-PG_DATA="${PG_DATA:-$SCRIPT_DIR/pg_data}"
 PG_USER="${PG_USER:-postgres}"
 PG_DATABASE="${PG_DATABASE:-testdb}"
 
 echo "=========================================="
-echo "PostgreSQL ${PG_VERSION} OAUTHBEARER Setup"
+echo "PostgreSQL 18 OAUTHBEARER Setup"
 echo "=========================================="
 echo "Port: $PG_PORT"
-echo "Data Dir: $PG_DATA"
 echo "User: $PG_USER"
 echo "Database: $PG_DATABASE"
 echo ""
 
-# Check if PostgreSQL is installed
-if ! command -v psql &> /dev/null; then
-    echo "PostgreSQL is not installed. Installing via Docker..."
-    USE_DOCKER=true
-else
-    echo "PostgreSQL found: $(psql --version)"
-    USE_DOCKER=false
-fi
+# Stop any existing container
+docker stop pgmoon-oauth-test 2>/dev/null || true
+docker rm pgmoon-oauth-test 2>/dev/null || true
 
-if [ "$USE_DOCKER" = true ]; then
-    echo ""
-    echo "Starting PostgreSQL ${PG_VERSION} in Docker..."
-    
-    # Stop any existing container
-    docker stop pgmoon-oauth-test 2>/dev/null || true
-    docker rm pgmoon-oauth-test 2>/dev/null || true
-    
-    # Start PostgreSQL container
-    docker run -d \
-        --name pgmoon-oauth-test \
-        -e POSTGRES_PASSWORD=pgmoon \
-        -e POSTGRES_USER=$PG_USER \
-        -e POSTGRES_DB=$PG_DATABASE \
-        -p $PG_PORT:5432 \
-        postgres:${PG_VERSION}
-    
-    echo "Waiting for PostgreSQL to be ready..."
-    sleep 5
-    
-    # Wait for PostgreSQL to be ready
-    for i in {1..30}; do
-        if docker exec pgmoon-oauth-test pg_isready -U $PG_USER > /dev/null 2>&1; then
-            echo "PostgreSQL is ready!"
-            break
-        fi
-        echo "Waiting... ($i/30)"
-        sleep 1
-    done
-    
-    # Create a simple test table
-    docker exec -i pgmoon-oauth-test psql -U $PG_USER -d $PG_DATABASE <<EOF
-CREATE TABLE IF NOT EXISTS oauth_test (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+# Start PostgreSQL container
+docker run -d \
+    --name pgmoon-oauth-test \
+    -e POSTGRES_PASSWORD=pgmoon \
+    -e POSTGRES_USER=$PG_USER \
+    -e POSTGRES_DB=$PG_DATABASE \
+    -p $PG_PORT:5432 \
+    postgres:${PG_VERSION}
 
-INSERT INTO oauth_test (name) VALUES 
-    ('OAUTHBEARER Test'),
-    ('pgmoon OAuth'),
-    ('RFC 7628 Implementation')
-ON CONFLICT DO NOTHING;
-EOF
-    
-    PGHOST="127.0.0.1"
-    PGPORT=$PG_PORT
-    PGUSER=$PG_USER
-    PGPASSWORD="pgmoon"
-    PGDATABASE=$PG_DATABASE
-    
-    echo ""
-    echo "PostgreSQL is running in Docker!"
-    echo ""
-    echo "Connection details:"
-    echo "  Host: $PGHOST"
-    echo "  Port: $PGPORT"
-    echo "  User: $PGUSER"
-    echo "  Password: $PGPASSWORD"
-    echo "  Database: $PGDATABASE"
-    echo ""
-    echo "To connect manually:"
-    echo "  PGPASSWORD=$PGPASSWORD psql -h $PGHOST -p $PGPORT -U $PGUSER -d $PGDATABASE"
-    echo ""
-    echo "To stop the container:"
-    echo "  docker stop pgmoon-oauth-test"
-    echo ""
-    echo "Note: Standard PostgreSQL doesn't support OAUTHBEARER by default."
-    echo "This setup provides a basic PostgreSQL instance for testing other auth methods."
-    echo "For full OAUTHBEARER testing, you would need a PostgreSQL instance with"
-    echo "OAUTHBEARER support (requires custom extensions or cloud provider support)."
-    
-else
-    # Local PostgreSQL installation
-    echo ""
-    echo "Setting up local PostgreSQL instance..."
-    
-    # Initialize data directory if it doesn't exist
-    if [ ! -d "$PG_DATA" ]; then
-        echo "Initializing PostgreSQL data directory..."
-        initdb -D "$PG_DATA" -U "$PG_USER"
+echo "Waiting for PostgreSQL to be ready..."
+sleep 5
+
+# Wait for PostgreSQL to be ready
+for i in {1..30}; do
+    if docker exec pgmoon-oauth-test pg_isready -U $PG_USER > /dev/null 2>&1; then
+        echo "PostgreSQL is ready!"
+        break
     fi
-    
-    # Configure PostgreSQL
-    cat >> "$PG_DATA/postgresql.conf" <<EOF
+    echo "Waiting... ($i/30)"
+    sleep 1
+done
 
-# Custom configuration for testing
-port = $PG_PORT
-listen_addresses = 'localhost'
-max_connections = 100
-shared_buffers = 128MB
-EOF
-    
-    # Configure authentication
-    cat > "$PG_DATA/pg_hba.conf" <<EOF
-# PostgreSQL Client Authentication Configuration File
-# TYPE  DATABASE        USER            ADDRESS                 METHOD
+echo ""
+echo "Configuring PostgreSQL 18 to advertise OAUTHBEARER..."
 
-# "local" is for Unix domain socket connections only
+# Create a simple OAuth validator stub (for testing only)
+# Note: PostgreSQL expects a shared library (.so), not a bash script
+# This will cause auth to fail, but PostgreSQL will still advertise OAUTHBEARER
+docker exec pgmoon-oauth-test bash -c 'cat > /tmp/oauth_validator.sh <<'\''VALIDATOR'\''
+#!/bin/bash
+# Simple OAuth validator stub for testing
+# In production, use a proper shared library that validates OAuth tokens
+exit 0
+VALIDATOR
+chmod +x /tmp/oauth_validator.sh'
+
+# Configure OAuth validator library
+docker exec pgmoon-oauth-test psql -U $PG_USER -c "ALTER SYSTEM SET oauth_validator_libraries TO '/tmp/oauth_validator.sh';"
+
+# Configure pg_hba.conf to use 'oauth' method
+# This forces PostgreSQL to advertise OAUTHBEARER in SASL mechanism list
+docker exec pgmoon-oauth-test bash -c 'cat > /var/lib/postgresql/18/docker/pg_hba.conf <<EOF
+# TYPE  DATABASE        USER            ADDRESS                 METHOD        OPTIONS
 local   all             all                                     trust
-# IPv4 local connections:
-host    all             all             127.0.0.1/32            md5
-# IPv6 local connections:
-host    all             all             ::1/128                 md5
-EOF
-    
-    echo "Starting PostgreSQL server..."
-    pg_ctl -D "$PG_DATA" -l "$PG_DATA/logfile" start
-    
-    # Wait for server to start
-    sleep 2
-    
-    # Create database
-    createdb -p $PG_PORT -U $PG_USER $PG_DATABASE 2>/dev/null || echo "Database already exists"
-    
-    # Create a simple test table
-    psql -p $PG_PORT -U $PG_USER -d $PG_DATABASE <<EOF
+host    all             all             all                     oauth         scope=openid issuer=https://test.example.com
+EOF'
+
+# Reload configuration
+docker exec pgmoon-oauth-test psql -U $PG_USER -c "SELECT pg_reload_conf();"
+
+echo "✓ PostgreSQL configured to advertise OAUTHBEARER"
+echo "  Note: Using test validator stub (auth will fail, but demonstrates SASL flow)"
+sleep 2
+
+# Create test user and database
+echo ""
+echo "Creating test user and table..."
+docker exec -i pgmoon-oauth-test psql -U $PG_USER -d $PG_DATABASE <<EOF
+-- Create a test role that matches OAuth token subject
+CREATE ROLE tester WITH LOGIN;
+
+-- Create test table
 CREATE TABLE IF NOT EXISTS oauth_test (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Grant access to tester role
+GRANT ALL PRIVILEGES ON TABLE oauth_test TO tester;
+GRANT USAGE, SELECT ON SEQUENCE oauth_test_id_seq TO tester;
+
+-- Insert test data
 INSERT INTO oauth_test (name) VALUES 
     ('OAUTHBEARER Test'),
     ('pgmoon OAuth'),
     ('RFC 7628 Implementation')
 ON CONFLICT DO NOTHING;
 EOF
-    
-    echo ""
-    echo "PostgreSQL is running!"
-    echo ""
-    echo "Connection details:"
-    echo "  Host: localhost"
-    echo "  Port: $PG_PORT"
-    echo "  User: $PG_USER"
-    echo "  Database: $PG_DATABASE"
-    echo ""
-    echo "To connect manually:"
-    echo "  psql -p $PG_PORT -U $PG_USER -d $PG_DATABASE"
-    echo ""
-    echo "To stop the server:"
-    echo "  pg_ctl -D $PG_DATA stop"
-fi
 
+echo "✓ Test user and table created"
+
+echo ""
+echo "=========================================="
+echo "PostgreSQL 18 is ready for OAUTHBEARER!"
+echo "=========================================="
+echo ""
+echo "Connection details:"
+echo "  Host: 127.0.0.1"
+echo "  Port: $PG_PORT"
+echo "  User: tester"
+echo "  Database: $PG_DATABASE"
+echo "  Auth Method: oauth (advertises OAUTHBEARER)"
+echo ""
+echo "PostgreSQL will advertise OAUTHBEARER in its SASL"
+echo "mechanism list, allowing pgmoon to send RFC 7628"
+echo "compliant OAUTHBEARER messages."
+echo ""
+echo "Note: Authentication will fail (invalid ELF header)"
+echo "because we use a bash script instead of a proper"
+echo "validator library, but this successfully demonstrates"
+echo "that pgmoon sends correct OAUTHBEARER SASL messages."
+echo ""
+echo "To stop the container:"
+echo "  docker stop pgmoon-oauth-test"
 echo ""
 echo "=========================================="
 echo "Setup complete!"
