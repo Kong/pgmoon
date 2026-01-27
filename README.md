@@ -449,28 +449,10 @@ directive if you wish to verify the server certificate.
 
 pgmoon supports multiple authentication methods:
 
+- Trust
 - MD5
 - SCRAM-SHA-256
-- **OAUTHBEARER** (for OAuth 2.0 token-based authentication)
-
-### OAUTHBEARER Authentication
-
-To use OAUTHBEARER authentication, provide an `oauth_token` when creating the connection:
-
-```lua
-local pgmoon = require("pgmoon")
-local pg = pgmoon.new({
-  host = "127.0.0.1",
-  port = "5432",
-  database = "mydb",
-  user = "postgres",
-  oauth_token = "your-oauth-bearer-token"
-})
-
-assert(pg:connect())
-```
-
-### Password Authentication
+- OAUTHBEARER (OAuth 2.0 bearer token authentication) - See [OAUTHBEARER_IMPLEMENTATION.md](OAUTHBEARER_IMPLEMENTATION.md)
 
 Password authentication may require a crypto library, [luaossl][].
 
