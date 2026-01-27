@@ -662,6 +662,12 @@ your own serializer.
 > deserializing, which is described above.
 
 
+> **Note:** Serializing is **NOT** the same as escaping. You can not take a
+> serialized value and concatenate it directly into your query. You may,
+> however, take a serialized value and escape it as a string, then attempt to
+> cast it to the appropriate type within your query.
+
+
 To provide your own serializer for an object, you can add a method on the
 metatable called `pgmoon_serialize`. This method takes two arguments, the value
 to be serialized and the current instance of `Postgres` that is doing the
