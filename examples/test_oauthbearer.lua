@@ -56,4 +56,39 @@ print("  Message with params length:", #msg_with_params)
 print("  Longer than basic message:", #msg_with_params > #msg and "✓" or "✗")
 print()
 
+-- Test 5: Optional PostgreSQL connection test (if server is available)
+print("Test 5: PostgreSQL connection with trust auth (optional)...")
+local pg = pgmoon.new({
+    host = "127.0.0.1",
+    port = "5433",
+    database = "testdb",
+    user = "postgres"
+})
+
+local success, err = pg:connect()
+
+if success then
+    print("✓ Connected to PostgreSQL")
+    
+    -- Query the test table
+    local result = pg:query("SELECT * FROM oauth_test ORDER BY id")
+    
+    if result then
+        print("  Data from oauth_test table:")
+        for _, row in ipairs(result) do
+            print(string.format("    [%d] %s", row.id, row.name))
+        end
+    else
+        print("  Note: oauth_test table not found (run ./setup_pg18_oauth.sh first)")
+    end
+    
+    pg:disconnect()
+    print("✓ Disconnected")
+else
+    print("⊘ PostgreSQL not available (this is optional)")
+    print("  Note: Run ./setup_pg18_oauth.sh to start a test PostgreSQL instance")
+end
+
+print()
+
 print("============================================")

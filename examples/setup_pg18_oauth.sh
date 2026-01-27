@@ -58,6 +58,21 @@ if [ "$USE_DOCKER" = true ]; then
         sleep 1
     done
     
+    # Create a simple test table
+    docker exec -i pgmoon-oauth-test psql -U $PG_USER -d $PG_DATABASE <<EOF
+CREATE TABLE IF NOT EXISTS oauth_test (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO oauth_test (name) VALUES 
+    ('OAUTHBEARER Test'),
+    ('pgmoon OAuth'),
+    ('RFC 7628 Implementation')
+ON CONFLICT DO NOTHING;
+EOF
+    
     PGHOST="127.0.0.1"
     PGPORT=$PG_PORT
     PGUSER=$PG_USER
@@ -127,6 +142,21 @@ EOF
     
     # Create database
     createdb -p $PG_PORT -U $PG_USER $PG_DATABASE 2>/dev/null || echo "Database already exists"
+    
+    # Create a simple test table
+    psql -p $PG_PORT -U $PG_USER -d $PG_DATABASE <<EOF
+CREATE TABLE IF NOT EXISTS oauth_test (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO oauth_test (name) VALUES 
+    ('OAUTHBEARER Test'),
+    ('pgmoon OAuth'),
+    ('RFC 7628 Implementation')
+ON CONFLICT DO NOTHING;
+EOF
     
     echo ""
     echo "PostgreSQL is running!"
