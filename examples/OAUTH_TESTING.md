@@ -1,13 +1,12 @@
-# pgmoon OAUTHBEARER Examples
+# pgmoon OAUTHBEARER Testing
 
-This directory contains examples and test scripts for the OAUTHBEARER authentication implementation in pgmoon.
+This directory contains test scripts for the OAUTHBEARER authentication implementation in pgmoon.
 
 ## Files
 
 ### Test Scripts
 
 - **`test_oauthbearer.lua`** - Comprehensive test script that validates the OAUTHBEARER implementation
-- **`oauthbearer_example.lua`** - Usage examples demonstrating OAUTHBEARER authentication
 
 ### Setup Scripts
 
