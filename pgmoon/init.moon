@@ -374,7 +374,7 @@ class Postgres
   scram_sha_256_auth: (msg) =>
     -- Check if OAUTHBEARER is requested
     if msg\match "OAUTHBEARER"
-      return @oauthbearer_auth msg
+      return @oauthbearer_auth!
     
     assert @config.password, "missing password, required for connect"
 
@@ -565,7 +565,7 @@ class Postgres
 
   -- https://datatracker.ietf.org/doc/html/rfc7628
   -- OAUTHBEARER SASL mechanism for OAuth 2.0 bearer tokens
-  oauthbearer_auth: (msg) =>
+  oauthbearer_auth: =>
     assert @config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth"
 
     OAuth = require "pgmoon.oauth"
