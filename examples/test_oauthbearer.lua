@@ -57,27 +57,3 @@ print("  Longer than basic message:", #msg_with_params > #msg and "✓" or "✗"
 print()
 
 print("============================================")
-print("All OAuth module tests completed!")
-print("============================================")
-print("\nSummary:")
-print("  ✓ OAuth module loads correctly")
-print("  ✓ Token validation works")
-print("  ✓ Client-first message generation works")
-print("  ✓ OAUTHBEARER messages formatted per RFC 7628")
-print()
-print("Note: To test actual PostgreSQL OAUTHBEARER authentication:")
-print("  - PostgreSQL server must support SASL OAUTHBEARER mechanism")
-print("  - OAuth validation must be configured on the server")
-print("  - pg_hba.conf must be configured to accept OAUTHBEARER")
-print()
-print("Example usage with OAUTHBEARER-enabled PostgreSQL:")
-print([[
-  local pg = pgmoon.new({
-    host = "your-server.example.com",
-    port = "5432",
-    database = "mydb",
-    user = "oauth-user",
-    oauth_token = "your-oauth-bearer-token"
-  })
-  assert(pg:connect())  -- Will use OAUTHBEARER automatically
-]])
