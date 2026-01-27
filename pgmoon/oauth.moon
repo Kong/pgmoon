@@ -11,11 +11,11 @@ class OAuth
     params = extra_params or {}
     gs2_header = "n,,"
     auth_param = "\1auth=Bearer " .. token
-    
+
     extra = ""
     for key, value in pairs params
       extra = extra .. "\1" .. key .. "=" .. value
-    
+
     -- Final format: gs2-header + auth param + extra params + final \x01
     gs2_header .. auth_param .. extra .. "\1\1"
 
