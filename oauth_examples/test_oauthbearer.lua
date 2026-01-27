@@ -76,56 +76,32 @@ print("  Attempting OAUTHBEARER authentication...")
 print("  pgmoon will send RFC 7628 SASL Initial Response: n,,\\x01auth=Bearer <token>\\x01\\x01")
 print()
 
-local success, err = pg_oauth:connect()
+local success, err_msg = pg_oauth:connect()
 
 if success then
     print("✓ OAUTHBEARER authentication succeeded!")
     print("  (Server accepted the OAuth token)")
     print()
-    
+
     -- Query the test table
     local result = pg_oauth:query("SELECT * FROM oauth_test ORDER BY id")
-    
+
     if result then
         print("  Data from oauth_test table:")
         for _, row in ipairs(result) do
             print(string.format("    [%d] %s", row.id, row.name))
         end
     end
-    
+
     pg_oauth:disconnect()
     print("  ✓ Disconnected")
     print()
     print("✓ Test 5 passed - OAUTHBEARER authentication works!")
 else
     print("⊘ OAUTHBEARER authentication attempt made (this is expected)")
-    print("  Error:", err)
-    print()
-    print("  What happened:")
-    print("    1. PostgreSQL advertised OAUTHBEARER in SASL mechanism list")
-    print("    2. pgmoon detected OAUTHBEARER and sent client-first message")
-    print("    3. Server received RFC 7628 formatted payload")
-    print("    4. Server rejected token (could not load validator library)")
-    print()
-    print("  ✓ The OAUTHBEARER code path was successfully exercised!")
-    print("  ✓ pgmoon sent correct SASL messages per RFC 7628")
+    print("  Error:", err_msg)
 end
 
 print()
-
-print("============================================")
-print("OAUTHBEARER Implementation Status")
-print("============================================")
-print("✓ OAuth module implemented (RFC 7628)")
-print("✓ Token validation functional")  
-print("✓ Client-first message generation correct")
-print("✓ SASL OAUTHBEARER flow implemented in pgmoon")
-print("✓ PostgreSQL 18 advertises OAUTHBEARER mechanism")
-print("✓ pgmoon correctly sends SASL Initial Response")
-print()
-print("For production use with real OAuth validation:")
-print("  - Configure PostgreSQL with OAuth validator library")
-print("  - Use cloud provider managed PostgreSQL")
-print("  - Set up Keycloak or other OAuth provider")
 print("============================================")
 
