@@ -445,23 +445,12 @@ In OpenResty, make sure to configure the
 [lua_ssl_trusted_certificate](https://github.com/openresty/lua-nginx-module#lua_ssl_trusted_certificate)
 directive if you wish to verify the server certificate.
 
-## Authentication
+## Authentication types
 
-pgmoon supports multiple authentication methods:
+Postgres has a handful of authentication types. pgmoon currently supports
+trust, peer and password authentication with scram-sha-256-auth or md5.
 
-- Trust
-- MD5
-- SCRAM-SHA-256
-- OAUTHBEARER (OAuth 2.0 bearer token authentication) - See [OAUTHBEARER_IMPLEMENTATION.md](OAUTHBEARER_IMPLEMENTATION.md)
-
-Password authentication may require a crypto library, [luaossl][].
-
-```bash
-$ luarocks install luaossl
-```
-> **Note:** [LuaCrypto][] can be used as a fallback, but the library is abandoned and not recommended for use
-
-> **Note:** Use within [OpenResty][] will prioritize built  in functions if possible
+For OAuth 2.0 bearer token authentication, see [OAUTHBEARER_IMPLEMENTATION.md](OAUTHBEARER_IMPLEMENTATION.md).
 
 ## Type conversion
 
