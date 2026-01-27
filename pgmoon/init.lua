@@ -375,7 +375,7 @@ do
     end,
     scram_sha_256_auth = function(self, msg)
       if msg:match("OAUTHBEARER") then
-        return self:oauthbearer_auth(msg)
+        return self:oauthbearer_auth()
       end
       assert(self.config.password, "missing password, required for connect")
       local random_bytes, x509_digest
@@ -557,7 +557,7 @@ do
       })
       return self:check_auth()
     end,
-    oauthbearer_auth = function(self, msg)
+    oauthbearer_auth = function(self)
       assert(self.config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth")
       local OAuth = require("pgmoon.oauth")
       local valid, err = OAuth:validate_token(self.config.oauth_token)
