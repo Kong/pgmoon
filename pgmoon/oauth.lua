@@ -1,3 +1,4 @@
+-- luacheck: ignore
 local OAuth
 do
   local _class_0
