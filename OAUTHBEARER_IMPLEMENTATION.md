@@ -64,6 +64,84 @@ local pg = pgmoon.new({
 assert(pg:connect())
 ```
 
+### Basic Example
+
+```lua
+local pgmoon = require("pgmoon")
+
+-- Obtain OAuth token from your OAuth provider
+local oauth_token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+-- Create connection with OAUTHBEARER
+local pg = pgmoon.new({
+  host = "your-postgres-server.example.com",
+  port = "5432",
+  database = "mydb",
+  user = "oauth-user",
+  oauth_token = oauth_token
+})
+
+-- Connect (will use OAUTHBEARER if server supports it)
+local success, err = pg:connect()
+if not success then
+  print("Connection failed:", err)
+  return
+end
+
+-- Execute queries
+local result = pg:query("SELECT current_user")
+print("Connected as:", result[1].current_user)
+
+pg:disconnect()
+```
+
+### Error Handling Example
+
+```lua
+local pgmoon = require("pgmoon")
+
+local pg = pgmoon.new({
+  host = "127.0.0.1",
+  port = "5432",
+  database = "mydb",
+  user = "postgres",
+  oauth_token = ""  -- Invalid empty token
+})
+
+local success, err = pg:connect()
+if not success then
+  print("Expected error:", err)
+  -- Output: "Invalid OAuth token: token must be a non-empty string"
+end
+```
+
+### OpenResty/nginx Example
+
+```lua
+local pgmoon = require("pgmoon")
+
+-- In OpenResty context
+local pg = pgmoon.new({
+  host = "127.0.0.1",
+  port = "5432",
+  database = "mydb",
+  user = "postgres",
+  oauth_token = "your-oauth-bearer-token"
+})
+
+local success, err = pg:connect()
+if not success then
+  ngx.log(ngx.ERR, "Failed to connect: ", err)
+  return ngx.exit(500)
+end
+
+-- Execute query
+local result = pg:query("SELECT 1 as value")
+
+-- Keep connection alive for reuse
+pg:keepalive()
+```
+
 ## Authentication Flow
 
 1. Client initiates connection with PostgreSQL

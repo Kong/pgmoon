@@ -16,7 +16,32 @@ This directory contains examples and test scripts for the OAUTHBEARER authentica
 
 ## Quick Start
 
-### 1. Setup PostgreSQL Test Instance
+### Run the OAuth Module Tests
+
+The OAuth tests can run **without** a PostgreSQL instance since they only test the OAuth module functionality:
+
+```bash
+# From the pgmoon root directory:
+cd /Users/xc/work/dev/pgmoon
+LUA_PATH="./?.lua;./?/init.lua;;" lua examples/test_oauthbearer.lua
+```
+
+Or if you have pgmoon installed via luarocks:
+
+```bash
+lua examples/test_oauthbearer.lua
+```
+
+This will test:
+- ✓ OAuth module loading
+- ✓ Token validation (valid, empty, nil tokens)
+- ✓ Client-first message generation
+- ✓ Message format per RFC 7628
+- ✓ Extra parameters handling
+
+### Optional: PostgreSQL Test Instance Setup
+
+If you want to test full PostgreSQL integration (not just OAuth module):
 
 ```bash
 cd examples
@@ -26,22 +51,11 @@ cd examples
 This will:
 - Start a PostgreSQL instance on port 5433
 - Create a test database named `testdb`
-- Configure trust authentication for local connections
+- Configure authentication for local connections
 
-### 2. Run the Tests
+**Note:** Standard PostgreSQL doesn't support OAUTHBEARER by default. The test script focuses on OAuth module validation only.
 
-```bash
-lua test_oauthbearer.lua
-```
-
-This will test:
-- ✓ OAuth module loading
-- ✓ Token validation
-- ✓ Client-first message generation
-- ✓ PostgreSQL connection
-- ✓ OAUTHBEARER configuration
-
-### 3. Cleanup
+### Cleanup
 
 ```bash
 ./cleanup_pg18.sh
@@ -63,32 +77,28 @@ Test 1: Loading OAuth module...
 
 Test 2: Token validation...
 ✓ Valid token accepted
-✓ Empty token rejected
-✓ Nil token rejected
+✓ Empty token rejected: Invalid OAuth token: token must be a non-empty string
+✓ Nil token rejected:   Invalid OAuth token: token must be a non-empty string
 
 Test 3: OAUTHBEARER client-first message generation...
-  Token: test-bearer-token-12345
-  Message length: 41
-  Starts with 'n,,': ✓
+  Token:        test-bearer-token-12345
+  Message length:       41
+  Starts with 'n,,':    ✓
   Contains auth=Bearer: ✓
 
 Test 4: Client-first message with extra parameters...
-  Message with params length: 66
-  Longer than basic message: ✓
+  Message with params length:   66
+  Longer than basic message:    ✓
 
-Test 5: Standard PostgreSQL connection (trust auth)...
-✓ Connected to PostgreSQL successfully!
-  PostgreSQL version: PostgreSQL 14.x
-  Current user: postgres
-  
-✓ Disconnected successfully
-
-Test 6: OAUTHBEARER configuration test...
-  Configuration created with oauth_token parameter
-  
 ============================================
 All OAuth module tests completed!
 ============================================
+
+Summary:
+  ✓ OAuth module loads correctly
+  ✓ Token validation works
+  ✓ Client-first message generation works
+  ✓ OAUTHBEARER messages formatted per RFC 7628
 ```
 
 ## Using OAUTHBEARER in Production
@@ -137,30 +147,51 @@ print("Connected as:", result[1].current_user)
 pg:disconnect()
 ```
 
-## Testing with Mock OAUTHBEARER
+## What the Tests Validate
 
-Since standard PostgreSQL doesn't support OAUTHBEARER, the test script validates:
-- The OAuth module implementation
-- Token validation logic
-- Message generation according to RFC 7628
-- Configuration handling
+The test script validates the **OAuth module implementation** without requiring a database:
+- OAuth module can be loaded and used correctly
+- Token validation logic works (accepts valid tokens, rejects invalid ones)
+- OAUTHBEARER client-first message generation follows RFC 7628
+- Message format includes proper gs2-header, auth parameter, and encoding
+- Extra parameters can be included in the message
 
-For full end-to-end OAUTHBEARER testing, you'll need a PostgreSQL instance with OAUTHBEARER support.
+**Note:** For full end-to-end OAUTHBEARER authentication testing, you'll need a PostgreSQL instance with OAUTHBEARER SASL support (requires extensions or cloud provider support like AWS RDS, Azure, Google Cloud SQL).
 
 ## Troubleshooting
 
-### PostgreSQL won't start
+### Module 'pgmoon' not found
+The most common issue is Lua not finding the pgmoon modules. Solutions:
+
+**Option 1:** Set LUA_PATH when running (recommended for development):
+```bash
+cd /Users/xc/work/dev/pgmoon
+LUA_PATH="./?.lua;./?/init.lua;;" lua examples/test_oauthbearer.lua
+```
+
+**Option 2:** Install pgmoon locally with luarocks:
+```bash
+cd /Users/xc/work/dev/pgmoon
+make local
+# or
+luarocks make --local
+# Then run from anywhere:
+lua examples/test_oauthbearer.lua
+```
+
+**Option 3:** Add to your shell profile (~/.bashrc or ~/.zshrc):
+```bash
+export LUA_PATH="/path/to/pgmoon/?.lua;/path/to/pgmoon/?/init.lua;;"
+```
+
+### PostgreSQL won't start (if using setup script)
 - Check if port 5433 is already in use: `lsof -i :5433`
 - Try a different port: `PG_PORT=5434 ./setup_pg18_oauth.sh`
 
-### Connection fails
+### PostgreSQL connection fails (if testing with database)
 - Verify PostgreSQL is running: `psql -p 5433 -U postgres -d testdb`
 - Check logs: `tail -f examples/pg_data/logfile`
-
-### Tests fail
-- Ensure pgmoon is built: `cd .. && make build`
-- Check Lua path includes pgmoon modules
-- Verify all dependencies are installed
+- Ensure pg_hba.conf has correct authentication method
 
 ## References
 
