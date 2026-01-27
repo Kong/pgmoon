@@ -445,10 +445,41 @@ In OpenResty, make sure to configure the
 [lua_ssl_trusted_certificate](https://github.com/openresty/lua-nginx-module#lua_ssl_trusted_certificate)
 directive if you wish to verify the server certificate.
 
-## Authentication types
+## Authentication
 
-Postgres has a handful of authentication types. pgmoon currently supports
-trust, peer and password authentication with scram-sha-256-auth or md5.
+pgmoon supports multiple authentication methods:
+
+- MD5
+- SCRAM-SHA-256
+- **OAUTHBEARER** (for OAuth 2.0 token-based authentication)
+
+### OAUTHBEARER Authentication
+
+To use OAUTHBEARER authentication, provide an `oauth_token` when creating the connection:
+
+```lua
+local pgmoon = require("pgmoon")
+local pg = pgmoon.new({
+  host = "127.0.0.1",
+  port = "5432",
+  database = "mydb",
+  user = "postgres",
+  oauth_token = "your-oauth-bearer-token"
+})
+
+assert(pg:connect())
+```
+
+### Password Authentication
+
+Password authentication may require a crypto library, [luaossl][].
+
+```bash
+$ luarocks install luaossl
+```
+> **Note:** [LuaCrypto][] can be used as a fallback, but the library is abandoned and not recommended for use
+
+> **Note:** Use within [OpenResty][] will prioritize built  in functions if possible
 
 ## Type conversion
 
@@ -658,12 +689,6 @@ your own serializer.
 > a serialized string would be just the string: `hello` (and typically paired
 > with a type OID, typically `25` for text). Serializing is the oposite of
 > deserializing, which is described above.
-
-
-> **Note:** Serializing is **NOT** the same as escaping. You can not take a
-> serialized value and concatenate it directly into your query. You may,
-> however, take a serialized value and escape it as a string, then attempt to
-> cast it to the appropriate type within your query.
 
 
 To provide your own serializer for an object, you can add a method on the
