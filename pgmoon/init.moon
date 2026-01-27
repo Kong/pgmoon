@@ -594,6 +594,10 @@ class Postgres
     t, msg = @receive_message()
     unless t
       return nil, msg
+    
+    -- Check for error message first (PostgreSQL may send error before closing)
+    if MSG_TYPE_B.error == t
+      return nil, @parse_error msg
 
     -- Check if authentication succeeded or if we need to handle a challenge
     -- For OAUTHBEARER, the server may send a challenge with error information
@@ -611,6 +615,10 @@ class Postgres
       t, msg = @receive_message()
       unless t
         return nil, msg
+      
+      -- Check for error after SASL exchange
+      if MSG_TYPE_B.error == t
+        return nil, @parse_error msg
 
     -- Final check
     @check_auth!
