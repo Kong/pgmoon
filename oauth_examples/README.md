@@ -19,7 +19,7 @@ Test OAUTHBEARER SASL authentication (RFC 7628) with PostgreSQL 18.
 ### Lua (pgmoon)
 ```bash
 cd ..
-LUA_PATH="./?.lua;./?/init.lua;;" lua examples/test_oauthbearer.lua
+LUA_PATH="./?.lua;./?/init.lua;;" lua oauth_examples/test_oauthbearer.lua
 ```
 
 ### Shell (psql)
