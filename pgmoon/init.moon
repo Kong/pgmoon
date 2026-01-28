@@ -568,10 +568,10 @@ class Postgres
   oauthbearer_auth: =>
     assert @config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth"
 
-    OAuth = require "pgmoon.oauth"
+    oauth = require "pgmoon.oauth"
 
     -- Validate the token
-    valid, err = OAuth\validate_token @config.oauth_token
+    valid, err = oauth.validate_token @config.oauth_token
     unless valid
       return nil, err
 
@@ -579,7 +579,7 @@ class Postgres
     -- The message format is: gs2-header authzid kvpairs
     -- gs2-header = "n,," (no channel binding, no authzid)
     -- kvpairs = "auth=Bearer <token>\x01\x01"
-    client_first_message = OAuth\create_client_first @config.oauth_token
+    client_first_message = oauth.create_client_first @config.oauth_token
 
     mechanism_name = "OAUTHBEARER" .. NULL
 

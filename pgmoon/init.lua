@@ -559,12 +559,12 @@ do
     end,
     oauthbearer_auth = function(self)
       assert(self.config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth")
-      local OAuth = require("pgmoon.oauth")
-      local valid, err = OAuth:validate_token(self.config.oauth_token)
+      local oauth = require("pgmoon.oauth")
+      local valid, err = oauth.validate_token(self.config.oauth_token)
       if not (valid) then
         return nil, err
       end
-      local client_first_message = OAuth:create_client_first(self.config.oauth_token)
+      local client_first_message = oauth.create_client_first(self.config.oauth_token)
       local mechanism_name = "OAUTHBEARER" .. NULL
       self:send_message(MSG_TYPE_F.password, {
         mechanism_name,
