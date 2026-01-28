@@ -2,4 +2,3 @@
 logs/
 nginx.conf.compiled
 pgdata
-tags
