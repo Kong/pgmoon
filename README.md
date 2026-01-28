@@ -450,7 +450,7 @@ directive if you wish to verify the server certificate.
 Postgres has a handful of authentication types. pgmoon currently supports
 trust, peer and password authentication with scram-sha-256-auth or md5.
 
-For OAuth 2.0 bearer token authentication, see [OAUTHBEARER_IMPLEMENTATION.md](OAUTHBEARER_IMPLEMENTATION.md).
+For OAuth 2.0 bearer token authentication, see [README_OAUTHBEARER.md](README_OAUTHBEARER.md).
 
 ## Type conversion
 
