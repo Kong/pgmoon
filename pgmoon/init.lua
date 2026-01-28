@@ -417,8 +417,8 @@ do
           else
             local pem, signature
             if self.sock_type == "nginx" then
-              ssl = require("resty.openssl.ssl").from_socket(self.sock)
-              local server_cert = ssl:get_peer_certificate()
+              local ssl_conn = require("resty.openssl.ssl").from_socket(self.sock)
+              local server_cert = ssl_conn:get_peer_certificate()
               pem, signature = server_cert:to_PEM(), server_cert:get_signature_name()
             else
               local server_cert = self.sock:getpeercertificate()
