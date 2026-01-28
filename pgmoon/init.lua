@@ -360,7 +360,11 @@ do
       elseif 5 == _exp_0 then
         return self:md5_auth(msg)
       elseif 10 == _exp_0 then
-        return self:scram_sha_256_auth(msg)
+        if msg:match("OAUTHBEARER") then
+          return self:oauthbearer_auth()
+        else
+          return self:scram_sha_256_auth(msg)
+        end
       else
         return error("don't know how to auth: " .. tostring(auth_type))
       end
@@ -374,9 +378,6 @@ do
       return self:check_auth()
     end,
     scram_sha_256_auth = function(self, msg)
-      if msg:match("OAUTHBEARER") then
-        return self:oauthbearer_auth()
-      end
       assert(self.config.password, "missing password, required for connect")
       local random_bytes, x509_digest
       do

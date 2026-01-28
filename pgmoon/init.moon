@@ -356,7 +356,11 @@ class Postgres
       when 5 -- md5 password
         @md5_auth msg
       when 10 -- AuthenticationSASL
-        @scram_sha_256_auth msg
+        -- Check if OAUTHBEARER is requested
+        if msg\match "OAUTHBEARER"
+          @oauthbearer_auth!
+        else
+          @scram_sha_256_auth msg
       else
         error "don't know how to auth: #{auth_type}"
 
@@ -372,10 +376,6 @@ class Postgres
 
   -- https://www.postgresql.org/docs/current/sasl-authentication.html#SASL-SCRAM-SHA-256
   scram_sha_256_auth: (msg) =>
-    -- Check if OAUTHBEARER is requested
-    if msg\match "OAUTHBEARER"
-      return @oauthbearer_auth!
-    
     assert @config.password, "missing password, required for connect"
 
     import random_bytes, x509_digest from require "pgmoon.crypto"
