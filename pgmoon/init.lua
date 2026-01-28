@@ -12,12 +12,6 @@ if ngx then
   pl_file = require("pl.file")
   ssl = require("ngx.ssl")
 end
-local pl_file
-local ssl
-if ngx then
-  pl_file = require("pl.file")
-  ssl = require("ngx.ssl")
-end
 local unpack = table.unpack or unpack
 local DEBUG = false
 local VERSION = "2.3.2.0"

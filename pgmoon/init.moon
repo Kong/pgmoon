@@ -10,13 +10,6 @@ if ngx
   pl_file = require "pl.file"
   ssl = require "ngx.ssl"
 
-local pl_file
-local ssl
-
-if ngx
-  pl_file = require "pl.file"
-  ssl = require "ngx.ssl"
-
 unpack = table.unpack or unpack
 
 -- Protocol documentation:
