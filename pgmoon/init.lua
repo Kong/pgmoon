@@ -577,8 +577,9 @@ do
       if auth_status == 0 then
         return true
       elseif auth_status == 11 then
+        -- RFC 7628: Send dummy client response (\x01) when server rejects
         self:send_message(MSG_TYPE_F.password, {
-          ""
+          "\1"
         })
         t, msg = self:receive_message()
         if not (t) then
