@@ -2,6 +2,9 @@ name: "OAUTHBEARER"
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test_oauthbearer:
     runs-on: ubuntu-latest
