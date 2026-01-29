@@ -574,7 +574,9 @@ do
         return nil, self:parse_error(msg)
       end
       local auth_status = self:decode_int(msg, 4)
-      if auth_status == 11 then
+      if auth_status == 0 then
+        return true
+      elseif auth_status == 11 then
         self:send_message(MSG_TYPE_F.password, {
           ""
         })
@@ -584,6 +586,10 @@ do
         end
         if MSG_TYPE_B.error == t then
           return nil, self:parse_error(msg)
+        end
+        auth_status = self:decode_int(msg, 4)
+        if auth_status == 0 then
+          return true
         end
       end
       return self:check_auth()
