@@ -1,0 +1,39 @@
+name: "OAUTHBEARER"
+
+on: [push, pull_request]
+
+jobs:
+  test_oauthbearer:
+    runs-on: ubuntu-latest
+    name: "PostgreSQL 18 + Keycloak"
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install LuaJIT
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y luajit libluajit-5.1-dev luarocks
+
+    - name: Install dependencies
+      run: |
+        sudo luarocks install luasocket
+
+    - name: Install pgmoon
+      run: |
+        sudo luarocks make
+
+    - name: Setup OAUTHBEARER test environment
+      run: |
+        cd oauth_examples
+        ./setup.sh
+
+    - name: Run OAUTHBEARER tests
+      run: |
+        LUA_PATH="./?.lua;./?/init.lua;;" luajit oauth_examples/test_oauthbearer.lua
+
+    - name: Cleanup
+      if: always()
+      run: |
+        cd oauth_examples
+        ./cleanup.sh
