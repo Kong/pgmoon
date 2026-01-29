@@ -103,7 +103,9 @@ jobs:
 
     - name: dependencies
       run: |
-        luarocks install luasocket
+        # Clear luarocks cache to avoid manifest issues
+        rm -rf ~/.cache/luarocks
+        luarocks install luasocket --only-server=https://luarocks.org
 
     - name: build
       run: |
