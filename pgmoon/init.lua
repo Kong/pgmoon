@@ -430,6 +430,11 @@ do
             if signature:match("^md5") or signature:match("^sha1")
                 or signature:match("sha1$") or signature:match("sha256$") then
               signature = "sha256"
+            else
+              local objects = require("resty.openssl.objects")
+              local sigid = assert(objects.txt2nid(signature))
+              local digest_nid = assert(objects.find_sigid_algs(sigid))
+              signature = assert(objects.nid2table(digest_nid).sn)
             end
             cbind_data = assert(x509_digest(pem, signature))
           end
