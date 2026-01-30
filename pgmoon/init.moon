@@ -423,13 +423,18 @@ class Postgres
             server_cert = @sock\getpeercertificate()
             server_cert\pem!, server_cert\getsignaturename!
 
+          signature = signature\lower!
           if signature\match("^md5") or signature\match("^sha1") or signature\match("sha1$") or signature\match("sha256$")
             signature = "sha256"
-          else
+          elseif @sock_type == "nginx"
             objects = require "resty.openssl.objects"
             sigid = assert objects.txt2nid(signature)
             digest_nid = assert objects.find_sigid_algs(sigid)
             signature = assert objects.nid2table(digest_nid).sn
+          else
+            digest = signature\match("sha%d+")
+            error "unsupported signature algorithm for channel binding: " .. tostring(signature) unless digest
+            signature = digest
 
           assert x509_digest(pem, signature)
 
