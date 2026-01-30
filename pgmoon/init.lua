@@ -153,13 +153,13 @@ do
       ssl = false
     },
     type_serializers = {
-      string = function(self, v)
+      string = function(_self, v)
         return 25, v
       end,
-      boolean = function(self, v)
+      boolean = function(_self, v)
         return 16, v and "t" or "f"
       end,
-      number = function(self, v)
+      number = function(_self, v)
         return 1700, tostring(v)
       end,
       table = function(self, v)
@@ -175,37 +175,37 @@ do
       end
     },
     type_deserializers = {
-      json = function(self, val, name)
+      json = function(_self, val, _name)
         local decode_json
         decode_json = require("pgmoon.json").decode_json
         return decode_json(val)
       end,
-      bytea = function(self, val, name)
+      bytea = function(self, val, _name)
         return self:decode_bytea(val)
       end,
-      array_boolean = function(self, val, name)
+      array_boolean = function(self, val, _name)
         local decode_array
         decode_array = require("pgmoon.arrays").decode_array
         return decode_array(val, tobool, self)
       end,
-      array_number = function(self, val, name)
+      array_number = function(self, val, _name)
         local decode_array
         decode_array = require("pgmoon.arrays").decode_array
         return decode_array(val, tonumber, self)
       end,
-      array_string = function(self, val, name)
+      array_string = function(self, val, _name)
         local decode_array
         decode_array = require("pgmoon.arrays").decode_array
         return decode_array(val, nil, self)
       end,
-      array_json = function(self, val, name)
+      array_json = function(self, val, _name)
         local decode_array
         decode_array = require("pgmoon.arrays").decode_array
         local decode_json
         decode_json = require("pgmoon.json").decode_json
         return decode_array(val, decode_json, self)
       end,
-      hstore = function(self, val, name)
+      hstore = function(_self, val, _name)
         local decode_hstore
         decode_hstore = require("pgmoon.hstore").decode_hstore
         return decode_hstore(val)
@@ -249,7 +249,9 @@ do
       local _exp_0 = self.sock_type
       if "nginx" == _exp_0 then
         connect_opts = {
-          pool = self.config.pool_name or tostring(self.config.host) .. ":" .. tostring(self.config.port) .. ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user),
+          pool = self.config.pool_name or
+            tostring(self.config.host) .. ":" .. tostring(self.config.port) ..
+            ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user),
           pool_size = self.config.pool_size,
           backlog = self.config.backlog
         }
@@ -294,7 +296,7 @@ do
     end,
     create_cqueues_openssl_context = function(self)
       if not (self.config.ssl_verify ~= nil or self.config.cert or self.config.key or self.config.ssl_version) then
-        return 
+        return
       end
       local ssl_context = require("openssl.ssl.context")
       local out = ssl_context.new(self.config.ssl_version)
@@ -339,7 +341,7 @@ do
       if not (t) then
         return nil, msg
       end
-      if not (MSG_TYPE_B.auth == t) then
+      if MSG_TYPE_B.auth ~= t then
         if MSG_TYPE_B.error == t then
           return nil, self:parse_error(msg)
         end
@@ -363,7 +365,7 @@ do
         return error("don't know how to auth: " .. tostring(auth_type))
       end
     end,
-    cleartext_auth = function(self, msg)
+    cleartext_auth = function(self, _msg)
       assert(self.config.password, "missing password, required for connect")
       self:send_message(MSG_TYPE_F.password, {
         self.config.password,
@@ -425,7 +427,8 @@ do
               pem, signature = server_cert:pem(), server_cert:getsignaturename()
             end
             signature = signature:lower()
-            if signature:match("^md5") or signature:match("^sha1") then
+            if signature:match("^md5") or signature:match("^sha1")
+                or signature:match("sha1$") or signature:match("sha256$") then
               signature = "sha256"
             end
             cbind_data = assert(x509_digest(pem, signature))
@@ -489,7 +492,9 @@ do
       local kdf_derive_sha256, hmac_sha256, digest_sha256
       do
         local _obj_0 = require("pgmoon.crypto")
-        kdf_derive_sha256, hmac_sha256, digest_sha256 = _obj_0.kdf_derive_sha256, _obj_0.hmac_sha256, _obj_0.digest_sha256
+        kdf_derive_sha256 = _obj_0.kdf_derive_sha256
+        hmac_sha256 = _obj_0.hmac_sha256
+        digest_sha256 = _obj_0.digest_sha256
       end
       local salted_password, err = kdf_derive_sha256(self.config.password, salt, tonumber(i))
       if not (salted_password) then
@@ -505,7 +510,9 @@ do
       if not (stored_key) then
         return nil, err
       end
-      local auth_message = tostring(client_first_message_bare) .. "," .. tostring(server_first_message) .. "," .. tostring(client_final_message_without_proof)
+      local auth_message = tostring(client_first_message_bare) .. ","
+        .. tostring(server_first_message) .. ","
+        .. tostring(client_final_message_without_proof)
       local client_signature
       client_signature, err = hmac_sha256(stored_key, auth_message)
       if not (client_signature) then
@@ -515,7 +522,8 @@ do
       if not (proof) then
         return nil, "failed to generate the client proof"
       end
-      local client_final_message = tostring(client_final_message_without_proof) .. ",p=" .. tostring(encode_base64(proof))
+      local client_final_message = tostring(client_final_message_without_proof)
+        .. ",p=" .. tostring(encode_base64(proof))
       self:send_message(MSG_TYPE_F.password, {
         client_final_message
       })
@@ -656,11 +664,16 @@ do
             if fn then
               local _oid, _value_or_err, _third = fn(self, v)
               if _oid == nil then
-                local full_error = "pgmoon: param " .. tostring(idx) .. ": " .. tostring(_value_or_err or "failed to serialize type: " .. tostring(v_type))
+                local full_error = "pgmoon: param " .. tostring(idx) .. ": "
+                  .. tostring(_value_or_err or
+                    ("failed to serialize type: " .. tostring(v_type)))
                 return nil, full_error
               end
               if _third ~= nil then
-                return nil, "pgmoon: param " .. tostring(idx) .. ": please do not return a third value from serializer function, we may use this value in the future for binary formats"
+                return nil, "pgmoon: param " .. tostring(idx)
+                  .. ": please do not return a third value from serializer"
+                  .. " function, we may use this value in the future for"
+                  .. " binary formats"
               end
               type_oid, value_bytes = _oid, _value_or_err
             else
@@ -748,7 +761,7 @@ do
           else
             insert(result, next_result)
           end
-          row_desc, data_rows, command_complete = nil
+          row_desc, data_rows = nil, nil
         elseif MSG_TYPE_B.ready_for_query == _exp_0 then
           break
         elseif MSG_TYPE_B.notification == _exp_0 then
@@ -756,7 +769,9 @@ do
             notifications = { }
           end
           insert(notifications, self:parse_notification(msg))
-        elseif MSG_TYPE_B.parse_complete == _exp_0 or MSG_TYPE_B.bind_complete == _exp_0 or MSG_TYPE_B.close_complete == _exp_0 then
+        elseif MSG_TYPE_B.parse_complete == _exp_0
+            or MSG_TYPE_B.bind_complete == _exp_0
+            or MSG_TYPE_B.close_complete == _exp_0 then
           local _ = nil
         else
           if DEBUG then
@@ -809,7 +824,7 @@ do
         return true
       end
     end,
-    parse_error = function(self, err_msg)
+    parse_error = function(_self, err_msg)
       local severity, message, detail, position
       local error_data = { }
       local offset = 1
@@ -853,7 +868,7 @@ do
       do
         local _accum_0 = { }
         local _len_0 = 1
-        for i = 1, num_fields do
+        for _ = 1, num_fields do
           local name = row_desc:match("[^%z]+", offset)
           offset = offset + #name + 1
           local data_type = self:decode_int(row_desc:sub(offset + 6, offset + 6 + 3))
@@ -877,7 +892,7 @@ do
       local out = { }
       local offset = 3
       for i = 1, num_fields do
-        local _continue_0 = false
+        local _continue_0
         repeat
           local field = fields[i]
           if not (field) then
@@ -1067,7 +1082,7 @@ do
         data
       })
     end,
-    decode_int = function(self, str, bytes)
+    decode_int = function(_self, str, bytes)
       if bytes == nil then
         bytes = #str
       end
@@ -1086,7 +1101,7 @@ do
         return error("don't know how to decode " .. tostring(bytes) .. " byte(s)")
       end
     end,
-    encode_int = function(self, n, bytes)
+    encode_int = function(_self, n, bytes)
       if bytes == nil then
         bytes = 4
       end
@@ -1113,7 +1128,7 @@ do
         return error("don't know how to encode " .. tostring(bytes) .. " byte(s)")
       end
     end,
-    decode_bytea = function(self, str)
+    decode_bytea = function(_self, str)
       if str:sub(1, 2) == '\\x' then
         return str:sub(3):gsub('..', function(hex)
           return string.char(tonumber(hex, 16))
@@ -1124,12 +1139,12 @@ do
         end)
       end
     end,
-    encode_bytea = function(self, str)
+    encode_bytea = function(_self, str)
       return string.format("E'\\\\x%s'", str:gsub('.', function(byte)
         return string.format('%02x', string.byte(byte))
       end))
     end,
-    escape_identifier = function(self, ident)
+    escape_identifier = function(_self, ident)
       return '"' .. (tostring(ident):gsub('"', '""')) .. '"'
     end,
     escape_literal = function(self, val)
@@ -1158,7 +1173,7 @@ do
       end
       self._config = _config
       self.config = setmetatable({ }, {
-        __index = function(t, key)
+        __index = function(_t, key)
           local value = self._config[key]
           if value == nil then
             return self.default_config[key]
