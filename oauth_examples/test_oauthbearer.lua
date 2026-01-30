@@ -32,15 +32,15 @@ print("------------------------------------------")
 
 -- Test 1: Token validation
 print("Test 1.1: Token validation...")
-local valid, err = oauth.validate_token("valid-token-example")
+local valid, _ = oauth.validate_token("valid-token-example")
 if valid then
     print("  ✓ Valid token accepted")
 else
-    print("  ✗ Error: " .. tostring(err))
+    print("  ✗ Error: valid token should be accepted")
     exit_code = 1
 end
 
-valid, err = oauth.validate_token("")
+valid, _ = oauth.validate_token("")
 if not valid then
     print("  ✓ Empty token rejected")
 else
@@ -48,7 +48,7 @@ else
     exit_code = 1
 end
 
-valid, err = oauth.validate_token(nil)
+valid, _ = oauth.validate_token(nil)
 if not valid then
     print("  ✓ Nil token rejected")
 else
@@ -121,7 +121,9 @@ end
 -- Test 2.1: Get OAuth token from Keycloak
 print("Test 2.1: Obtaining OAuth token from Keycloak...")
 local curl_cmd = string.format(
-    'curl -s -X POST "%s/realms/%s/protocol/openid-connect/token" -H "Content-Type: application/x-www-form-urlencoded" -d "username=%s&password=%s&grant_type=password&client_id=%s&scope=openid"',
+    'curl -s -X POST "%s/realms/%s/protocol/openid-connect/token" ' ..
+    '-H "Content-Type: application/x-www-form-urlencoded" ' ..
+    '-d "username=%s&password=%s&grant_type=password&client_id=%s&scope=openid"',
     KEYCLOAK_INTERNAL_URL, REALM, TEST_USER, TEST_PASSWORD, CLIENT_ID
 )
 local token_response = docker_exec(curl_cmd)
@@ -178,18 +180,18 @@ local success, connect_err = pg:connect()
 
 if success then
     print("  ✓ OAUTHBEARER authentication succeeded")
-    
+
     -- Test 2.3: Execute query
     print("Test 2.3: Executing test query...")
     local result = pg:query("SELECT * FROM oauth_test ORDER BY id LIMIT 3")
-    
+
     if result and #result > 0 then
         print("  ✓ Query executed successfully (" .. #result .. " rows)")
     else
         print("  ✗ Query returned no results")
         exit_code = 1
     end
-    
+
     -- Test 2.4: Verify authenticated user
     print("Test 2.4: Verifying authenticated user...")
     local user_result = pg:query("SELECT current_user")
@@ -199,7 +201,7 @@ if success then
         print("  ✗ User verification failed")
         exit_code = 1
     end
-    
+
     pg:disconnect()
     print("  ✓ Disconnected")
 else

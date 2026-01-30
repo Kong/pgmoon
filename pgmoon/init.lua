@@ -8,7 +8,7 @@ do
 end
 local pl_file
 local ssl
-if ngx then
+if rawget(_G, "ngx") then
   pl_file = require("pl.file")
   ssl = require("ngx.ssl")
 end
@@ -39,18 +39,18 @@ _len = function(thing, t)
     return error("don't know how to calculate length of " .. tostring(t))
   end
 end
-local _debug_msg
-_debug_msg = function(str)
-  return require("moon").dump((function()
-    local _accum_0 = { }
-    local _len_0 = 1
-    for p in str:gmatch("[^%z]+") do
-      _accum_0[_len_0] = p
-      _len_0 = _len_0 + 1
-    end
-    return _accum_0
-  end)())
-end
+-- Debug function (uncomment if needed for debugging)
+-- local function _debug_msg(str)
+--   return require("moon").dump((function()
+--     local _accum_0 = { }
+--     local _len_0 = 1
+--     for p in str:gmatch("[^%z]+") do
+--       _accum_0[_len_0] = p
+--       _len_0 = _len_0 + 1
+--     end
+--     return _accum_0
+--   end)())
+-- end
 local flipped
 flipped = function(t)
   local keys
