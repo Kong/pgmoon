@@ -2,3 +2,5 @@
 logs/
 nginx.conf.compiled
 pgdata
+# CI debug files
+.ci-debug/
