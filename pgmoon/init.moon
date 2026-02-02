@@ -604,21 +604,28 @@ class Postgres
     -- In the simple case, the server accepts the token immediately
     auth_status = @decode_int msg, 4
 
+    -- Authentication succeeded immediately
+    if auth_status == 0
+      return true
+
     if auth_status == 11  -- AuthenticationSASLContinue
-      -- Server sent a challenge (usually error details)
-      -- Send empty response to complete the exchange
+      -- RFC 7628: Send dummy client response (\x01) when server rejects
       @send_message MSG_TYPE_F.password, {
-        ""
+        "\1"
       }
 
       -- Receive final auth result
       t, msg = @receive_message()
       unless t
         return nil, msg
-      
+
       -- Check for error after SASL exchange
       if MSG_TYPE_B.error == t
         return nil, @parse_error msg
+
+      auth_status = @decode_int msg, 4
+      if auth_status == 0
+        return true
 
     -- Final check
     @check_auth!
