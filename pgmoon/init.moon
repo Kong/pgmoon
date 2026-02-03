@@ -628,8 +628,10 @@ class Postgres
       if auth_status == 0
         return true
 
-    -- Final check
-    @check_auth!
+    if auth_status == 12  -- AuthenticationSASLFinal (expected success path)
+      return @check_auth!
+  
+    return nil, "unexpected OAUTHBEARER auth status: " .. tostring(auth_status)
 
   check_auth: =>
     t, msg = @receive_message!

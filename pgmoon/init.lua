@@ -592,7 +592,10 @@ do
           return true
         end
       end
-      return self:check_auth()
+      if auth_status == 12 then
+        return self:check_auth()
+      end
+      return nil, "unexpected OAUTHBEARER auth status: " .. tostring(auth_status)
     end,
     check_auth = function(self)
       local t, msg = self:receive_message()
