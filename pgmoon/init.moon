@@ -6,7 +6,7 @@ import rshift, lshift, band, bxor from require "pgmoon.bit"
 local pl_file
 local ssl
 
-if ngx
+if rawget _G, "ngx"
   pl_file = require "pl.file"
   ssl = require "ngx.ssl"
 
@@ -35,8 +35,9 @@ _len = (thing, t=type(thing)) ->
       error "don't know how to calculate length of #{t}"
 
 
-_debug_msg = (str) ->
-  require("moon").dump [p for p in str\gmatch "[^%z]+"]
+-- Debug function (uncomment if needed for debugging)
+-- _debug_msg = (str) ->
+--   require("moon").dump [p for p in str\gmatch "[^%z]+"]
 
 flipped = (t) ->
   keys = [k for k in pairs t]
