@@ -600,6 +600,8 @@ class Postgres
     if MSG_TYPE_B.error == t
       return nil, @parse_error msg
 
+  unless MSG_TYPE_B.auth == t
+    return nil, "expected auth message during OAUTHBEARER, got: " .. tostring(t)
     -- Check if authentication succeeded or if we need to handle a challenge
     -- For OAUTHBEARER, the server may send a challenge with error information
     -- In the simple case, the server accepts the token immediately
