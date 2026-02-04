@@ -35,9 +35,8 @@ _len = (thing, t=type(thing)) ->
       error "don't know how to calculate length of #{t}"
 
 
--- Debug function (uncomment if needed for debugging)
--- _debug_msg = (str) ->
---   require("moon").dump [p for p in str\gmatch "[^%z]+"]
+_debug_msg = (str) ->
+  require("moon").dump [p for p in str\gmatch "[^%z]+"]
 
 flipped = (t) ->
   keys = [k for k in pairs t]
@@ -417,8 +416,8 @@ class Postgres
           openssl_x509\digest "sha256", "s"
         else
           pem, signature = if @sock_type == "nginx"
-            ssl_conn = require("resty.openssl.ssl").from_socket(@sock)
-            server_cert = ssl_conn\get_peer_certificate()
+            ssl = require("resty.openssl.ssl").from_socket(@sock)
+            server_cert = ssl\get_peer_certificate()
             server_cert\to_PEM!, server_cert\get_signature_name!
           else
             server_cert = @sock\getpeercertificate()
@@ -600,8 +599,9 @@ class Postgres
     if MSG_TYPE_B.error == t
       return nil, @parse_error msg
 
-  unless MSG_TYPE_B.auth == t
-    return nil, "expected auth message during OAUTHBEARER, got: " .. tostring(t)
+    unless MSG_TYPE_B.auth == t
+      return nil, "expected auth message during OAUTHBEARER, got: " .. tostring(t)
+
     -- Check if authentication succeeded or if we need to handle a challenge
     -- For OAUTHBEARER, the server may send a challenge with error information
     -- In the simple case, the server accepts the token immediately

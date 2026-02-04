@@ -39,6 +39,18 @@ _len = function(thing, t)
     return error("don't know how to calculate length of " .. tostring(t))
   end
 end
+local _debug_msg
+_debug_msg = function(str)
+  return require("moon").dump((function()
+    local _accum_0 = { }
+    local _len_0 = 1
+    for p in str:gmatch("[^%z]+") do
+      _accum_0[_len_0] = p
+      _len_0 = _len_0 + 1
+    end
+    return _accum_0
+  end)())
+end
 local flipped
 flipped = function(t)
   local keys
@@ -405,8 +417,8 @@ do
           else
             local pem, signature
             if self.sock_type == "nginx" then
-              local ssl_conn = require("resty.openssl.ssl").from_socket(self.sock)
-              local server_cert = ssl_conn:get_peer_certificate()
+              ssl = require("resty.openssl.ssl").from_socket(self.sock)
+              local server_cert = ssl:get_peer_certificate()
               pem, signature = server_cert:to_PEM(), server_cert:get_signature_name()
             else
               local server_cert = self.sock:getpeercertificate()
@@ -571,6 +583,9 @@ do
       end
       if MSG_TYPE_B.error == t then
         return nil, self:parse_error(msg)
+      end
+      if not (MSG_TYPE_B.auth == t) then
+        return nil, "expected auth message during OAUTHBEARER, got: " .. tostring(t)
       end
       local auth_status = self:decode_int(msg, 4)
       if auth_status == 0 then
