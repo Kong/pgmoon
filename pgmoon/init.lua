@@ -8,7 +8,7 @@ do
 end
 local pl_file
 local ssl
-if ngx then
+if rawget(_G, "ngx") then
   pl_file = require("pl.file")
   ssl = require("ngx.ssl")
 end
@@ -442,7 +442,11 @@ do
       elseif 5 == _exp_0 then
         return self:md5_auth(msg)
       elseif 10 == _exp_0 then
-        return self:scram_sha_256_auth(msg)
+        if msg:match("OAUTHBEARER") then
+          return self:oauthbearer_auth()
+        else
+          return self:scram_sha_256_auth(msg)
+        end
       else
         return error("don't know how to auth: " .. tostring(auth_type))
       end
@@ -514,8 +518,19 @@ do
             if with_sig then
               signature = with_sig
             end
-            if signature:match("^md5") or signature:match("^sha1") or signature:match("sha1$") then
+            if signature:match("^md5") or signature:match("^sha1") or signature:match("sha1$") or signature:match("sha256$") then
               signature = "sha256"
+            elseif self.sock_type == "nginx" then
+              local objects = require("resty.openssl.objects")
+              local sigid = assert(objects.txt2nid(signature))
+              local digest_nid = assert(objects.find_sigid_algs(sigid))
+              signature = assert(objects.nid2table(digest_nid).sn)
+            else
+              local digest = signature:match("sha%d+")
+              if not (digest) then
+                error("unsupported signature algorithm for channel binding: " .. tostring(signature))
+              end
+              signature = digest
             end
             cbind_data = assert(x509_digest(pem, signature))
           end
@@ -640,6 +655,55 @@ do
         NULL
       })
       return self:check_auth()
+    end,
+    oauthbearer_auth = function(self)
+      assert(self.config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth")
+      local oauth = require("pgmoon.oauth")
+      local valid, err = oauth.validate_token(self.config.oauth_token)
+      if not (valid) then
+        return nil, err
+      end
+      local client_first_message = oauth.create_client_first(self.config.oauth_token)
+      local mechanism_name = "OAUTHBEARER" .. NULL
+      self:send_message(MSG_TYPE_F.password, {
+        mechanism_name,
+        self:encode_int(#client_first_message),
+        client_first_message
+      })
+      local t, msg = self:receive_message()
+      if not (t) then
+        return nil, msg
+      end
+      if MSG_TYPE_B.error == t then
+        return nil, self:parse_error(msg)
+      end
+      if not (MSG_TYPE_B.auth == t) then
+        return nil, "expected auth message during OAUTHBEARER, got: " .. tostring(t)
+      end
+      local auth_status = self:decode_int(msg, 4)
+      if auth_status == 0 then
+        return true
+      end
+      if auth_status == 11 then
+        self:send_message(MSG_TYPE_F.password, {
+          "\1"
+        })
+        t, msg = self:receive_message()
+        if not (t) then
+          return nil, msg
+        end
+        if MSG_TYPE_B.error == t then
+          return nil, self:parse_error(msg)
+        end
+        auth_status = self:decode_int(msg, 4)
+        if auth_status == 0 then
+          return true
+        end
+      end
+      if auth_status == 12 then
+        return self:check_auth()
+      end
+      return nil, "unexpected OAUTHBEARER auth status: " .. tostring(auth_status)
     end,
     check_auth = function(self)
       local t, msg = self:receive_message()

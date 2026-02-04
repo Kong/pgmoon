@@ -1,4 +1,4 @@
-.PHONY: build test test_resty local show_types lint bench bench_luasocket
+.PHONY: build test test_resty test_oauth local show_types lint bench bench_luasocket
 
 build:
 	moonc pgmoon
@@ -15,6 +15,9 @@ test: build
 	busted spec/pgmoon_spec.moon spec/pgmoon_pool_spec.moon spec/pgmoon_unix_spec.moon
 	sleep 1
 	busted spec/pgmoon_ssl_spec.moon
+
+test_oauth: build
+	busted spec/pgmoon_oauth_spec.moon
 
 test_resty: build
 	resty spec/resty_busted.lua spec/pgmoon_spec.moon spec/pgmoon_pool_spec.moon spec/pgmoon_unix_spec.moon
