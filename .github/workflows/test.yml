@@ -2,6 +2,9 @@ name: "test"
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -25,6 +28,8 @@ jobs:
         luaVersion: ${{ matrix.luaVersion }}
 
     - uses: leafo/gh-actions-luarocks@e65774a6386cb4f24e293dca7fc4ff89165b64c5
+      with:
+        luarocksVersion: "3.12.0"
 
     - name: dependencies
       run: |
@@ -64,12 +69,13 @@ jobs:
     steps:
     - uses: actions/checkout@master
 
-    - uses: leafo/gh-actions-openresty@4bd905d98dcbee29a2d95771d0b1e743e890fdfa
+    - uses: leafo/gh-actions-openresty@6184026749c355c5e70f9f2792ef66d1c0f62b7a # v2.1.0
       with:
         openrestyVersion: "1.19.9.1"
 
     - uses: leafo/gh-actions-luarocks@e65774a6386cb4f24e293dca7fc4ff89165b64c5
       with:
+        luarocksVersion: "3.12.0"
         withLuaPath: "/usr/local/openresty/luajit/"
 
     - name: dependencies
@@ -87,3 +93,44 @@ jobs:
       run: |
         resty spec/resty_busted.lua
 
+
+  test_oauth:
+    runs-on: ubuntu-latest
+    name: "OAuth Integration Tests"
+
+    steps:
+    - uses: actions/checkout@master
+
+    - uses: leafo/gh-actions-lua@ef9239997afff6d2d8b42ec9729c1d4b7f2f1302
+      with:
+        luaVersion: "luajit-openresty"
+
+    - uses: leafo/gh-actions-luarocks@e65774a6386cb4f24e293dca7fc4ff89165b64c5
+      with:
+        luarocksVersion: "3.12.0"
+
+    - name: dependencies
+      run: |
+        luarocks install busted
+        luarocks install luasocket
+        luarocks install moonscript
+        luarocks install luaossl
+
+    - name: build
+      run: |
+        luarocks make
+
+    - name: Setup OAuth environment
+      run: |
+        cd oauth_examples
+        ./setup.sh
+
+    - name: Run OAuth spec tests
+      run: |
+        OAUTH_PG_HOST=127.0.0.1 OAUTH_PG_PORT=5433 busted -o utfTerminal spec/pgmoon_oauth_spec.moon
+
+    - name: Cleanup
+      if: always()
+      run: |
+        cd oauth_examples
+        ./cleanup.sh

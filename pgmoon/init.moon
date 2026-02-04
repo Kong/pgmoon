@@ -6,14 +6,7 @@ import rshift, lshift, band, bxor from require "pgmoon.bit"
 local pl_file
 local ssl
 
-if ngx
-  pl_file = require "pl.file"
-  ssl = require "ngx.ssl"
-
-local pl_file
-local ssl
-
-if ngx
+if rawget _G, "ngx"
   pl_file = require "pl.file"
   ssl = require "ngx.ssl"
 
@@ -356,7 +349,11 @@ class Postgres
       when 5 -- md5 password
         @md5_auth msg
       when 10 -- AuthenticationSASL
-        @scram_sha_256_auth msg
+        -- Check if OAUTHBEARER is requested
+        if msg\match "OAUTHBEARER"
+          @oauthbearer_auth!
+        else
+          @scram_sha_256_auth msg
       else
         error "don't know how to auth: #{auth_type}"
 
@@ -427,10 +424,17 @@ class Postgres
             server_cert\pem!, server_cert\getsignaturename!
 
           signature = signature\lower!
-
-          -- upgrade the signature if necessary
-          if signature\match("^md5") or signature\match("^sha1")
+          if signature\match("^md5") or signature\match("^sha1") or signature\match("sha1$") or signature\match("sha256$")
             signature = "sha256"
+          elseif @sock_type == "nginx"
+            objects = require "resty.openssl.objects"
+            sigid = assert objects.txt2nid(signature)
+            digest_nid = assert objects.find_sigid_algs(sigid)
+            signature = assert objects.nid2table(digest_nid).sn
+          else
+            digest = signature\match("sha%d+")
+            error "unsupported signature algorithm for channel binding: " .. tostring(signature) unless digest
+            signature = digest
 
           assert x509_digest(pem, signature)
 
@@ -558,6 +562,78 @@ class Postgres
     }
 
     @check_auth!
+
+  -- https://datatracker.ietf.org/doc/html/rfc7628
+  -- OAUTHBEARER SASL mechanism for OAuth 2.0 bearer tokens
+  oauthbearer_auth: =>
+    assert @config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth"
+
+    oauth = require "pgmoon.oauth"
+
+    -- Validate the token
+    valid, err = oauth.validate_token @config.oauth_token
+    unless valid
+      return nil, err
+
+    -- Create OAUTHBEARER client-first message
+    -- The message format is: gs2-header authzid kvpairs
+    -- gs2-header = "n,," (no channel binding, no authzid)
+    -- kvpairs = "auth=Bearer <token>\x01\x01"
+    client_first_message = oauth.create_client_first @config.oauth_token
+
+    mechanism_name = "OAUTHBEARER" .. NULL
+
+    -- Send the SASL initial response
+    @send_message MSG_TYPE_F.password, {
+      mechanism_name
+      @encode_int #client_first_message
+      client_first_message
+    }
+
+    -- Receive server response
+    t, msg = @receive_message()
+    unless t
+      return nil, msg
+    
+    -- Check for error message first (PostgreSQL may send error before closing)
+    if MSG_TYPE_B.error == t
+      return nil, @parse_error msg
+
+    unless MSG_TYPE_B.auth == t
+      return nil, "expected auth message during OAUTHBEARER, got: " .. tostring(t)
+
+    -- Check if authentication succeeded or if we need to handle a challenge
+    -- For OAUTHBEARER, the server may send a challenge with error information
+    -- In the simple case, the server accepts the token immediately
+    auth_status = @decode_int msg, 4
+
+    -- Authentication succeeded immediately
+    if auth_status == 0
+      return true
+
+    if auth_status == 11  -- AuthenticationSASLContinue
+      -- RFC 7628: Send dummy client response (\x01) when server rejects
+      @send_message MSG_TYPE_F.password, {
+        "\1"
+      }
+
+      -- Receive final auth result
+      t, msg = @receive_message()
+      unless t
+        return nil, msg
+
+      -- Check for error after SASL exchange
+      if MSG_TYPE_B.error == t
+        return nil, @parse_error msg
+
+      auth_status = @decode_int msg, 4
+      if auth_status == 0
+        return true
+
+    if auth_status == 12  -- AuthenticationSASLFinal (expected success path)
+      return @check_auth!
+  
+    return nil, "unexpected OAUTHBEARER auth status: " .. tostring(auth_status)
 
   check_auth: =>
     t, msg = @receive_message!

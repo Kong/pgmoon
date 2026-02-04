@@ -8,7 +8,7 @@ do
 end
 local pl_file
 local ssl
-if ngx then
+if rawget(_G, "ngx") then
   pl_file = require("pl.file")
   ssl = require("ngx.ssl")
 end
@@ -294,7 +294,7 @@ do
     end,
     create_cqueues_openssl_context = function(self)
       if not (self.config.ssl_verify ~= nil or self.config.cert or self.config.key or self.config.ssl_version) then
-        return
+        return 
       end
       local ssl_context = require("openssl.ssl.context")
       local out = ssl_context.new(self.config.ssl_version)
@@ -326,7 +326,12 @@ do
         protocol = self.config.ssl_version,
         verify = self.config.ssl_verify and "peer" or "none",
         ssl_version = self.config.ssl_version or "any",
-        options = { "all", "no_sslv2", "no_sslv3", "no_tlsv1" }
+        options = {
+          "all",
+          "no_sslv2",
+          "no_sslv3",
+          "no_tlsv1"
+        }
       }
     end,
     auth = function(self)
@@ -349,7 +354,11 @@ do
       elseif 5 == _exp_0 then
         return self:md5_auth(msg)
       elseif 10 == _exp_0 then
-        return self:scram_sha_256_auth(msg)
+        if msg:match("OAUTHBEARER") then
+          return self:oauthbearer_auth()
+        else
+          return self:scram_sha_256_auth(msg)
+        end
       else
         return error("don't know how to auth: " .. tostring(auth_type))
       end
@@ -408,20 +417,27 @@ do
           else
             local pem, signature
             if self.sock_type == "nginx" then
-              local ssl = require("resty.openssl.ssl").from_socket(self.sock)
+              ssl = require("resty.openssl.ssl").from_socket(self.sock)
               local server_cert = ssl:get_peer_certificate()
               pem, signature = server_cert:to_PEM(), server_cert:get_signature_name()
             else
               local server_cert = self.sock:getpeercertificate()
               pem, signature = server_cert:pem(), server_cert:getsignaturename()
             end
+            signature = signature:lower()
             if signature:match("^md5") or signature:match("^sha1") or signature:match("sha1$") or signature:match("sha256$") then
               signature = "sha256"
-            else
+            elseif self.sock_type == "nginx" then
               local objects = require("resty.openssl.objects")
               local sigid = assert(objects.txt2nid(signature))
               local digest_nid = assert(objects.find_sigid_algs(sigid))
               signature = assert(objects.nid2table(digest_nid).sn)
+            else
+              local digest = signature:match("sha%d+")
+              if not (digest) then
+                error("unsupported signature algorithm for channel binding: " .. tostring(signature))
+              end
+              signature = digest
             end
             cbind_data = assert(x509_digest(pem, signature))
           end
@@ -546,6 +562,55 @@ do
         NULL
       })
       return self:check_auth()
+    end,
+    oauthbearer_auth = function(self)
+      assert(self.config.oauth_token, "missing oauth_token, required for OAUTHBEARER auth")
+      local oauth = require("pgmoon.oauth")
+      local valid, err = oauth.validate_token(self.config.oauth_token)
+      if not (valid) then
+        return nil, err
+      end
+      local client_first_message = oauth.create_client_first(self.config.oauth_token)
+      local mechanism_name = "OAUTHBEARER" .. NULL
+      self:send_message(MSG_TYPE_F.password, {
+        mechanism_name,
+        self:encode_int(#client_first_message),
+        client_first_message
+      })
+      local t, msg = self:receive_message()
+      if not (t) then
+        return nil, msg
+      end
+      if MSG_TYPE_B.error == t then
+        return nil, self:parse_error(msg)
+      end
+      if not (MSG_TYPE_B.auth == t) then
+        return nil, "expected auth message during OAUTHBEARER, got: " .. tostring(t)
+      end
+      local auth_status = self:decode_int(msg, 4)
+      if auth_status == 0 then
+        return true
+      end
+      if auth_status == 11 then
+        self:send_message(MSG_TYPE_F.password, {
+          "\1"
+        })
+        t, msg = self:receive_message()
+        if not (t) then
+          return nil, msg
+        end
+        if MSG_TYPE_B.error == t then
+          return nil, self:parse_error(msg)
+        end
+        auth_status = self:decode_int(msg, 4)
+        if auth_status == 0 then
+          return true
+        end
+      end
+      if auth_status == 12 then
+        return self:check_auth()
+      end
+      return nil, "unexpected OAUTHBEARER auth status: " .. tostring(auth_status)
     end,
     check_auth = function(self)
       local t, msg = self:receive_message()
@@ -954,9 +1019,7 @@ do
       if t == MSG_TYPE_B.parameter_status then
         local _exp_0 = self.sock_type
         if "nginx" == _exp_0 then
-	        local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
-
-          -- version compability check to see if setclientcert is supported
+          local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
           if self.sock.setclientcert then
             local ok, err_internal = self.sock:setclientcert(luasec_opts.certificate, luasec_opts.key)
             if not ok then
