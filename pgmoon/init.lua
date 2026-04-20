@@ -413,7 +413,16 @@ do
         do
           if self.sock_type == "cqueues" then
             local openssl_x509 = self.sock:getpeercertificate()
-            cbind_data = openssl_x509:digest("sha256", "s")
+            local sig = openssl_x509:getSignatureName():lower()
+            local hash
+            if sig:match("^md5") or sig:match("^sha1") or sig:match("sha1$") or sig:match("sha256$") then
+              hash = "sha256"
+            elseif sig:match("sha384") then
+              hash = "sha384"
+            else
+              hash = error("unsupported signature algorithm for channel binding: " .. tostring(sig))
+            end
+            cbind_data = openssl_x509:digest(hash, "s")
           else
             local pem, signature
             if self.sock_type == "nginx" then
