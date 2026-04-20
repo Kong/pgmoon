@@ -25,4 +25,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      # semgrep action imports pkg_resources, which Python 3.12 no longer ships
+      - run: python -m pip install --upgrade setuptools
       - uses: Kong/public-shared-actions/security-actions/semgrep@1c412fcf497b6b8ae6cc3313389aa8756de68eac # semgrep@5.0.1

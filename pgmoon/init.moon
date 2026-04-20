@@ -413,7 +413,14 @@ class Postgres
       cbind_data = do
         if @sock_type == "cqueues"
           openssl_x509 = @sock\getpeercertificate!
-          openssl_x509\digest "sha256", "s"
+          sig = openssl_x509\getSignatureName!\lower!
+          hash = if sig\match("^md5") or sig\match("^sha1") or sig\match("sha1$") or sig\match("sha256$")
+            "sha256"
+          elseif sig\match("sha384")
+            "sha384"
+          else
+            error "unsupported signature algorithm for channel binding: " .. tostring(sig)
+          openssl_x509\digest hash, "s"
         else
           pem, signature = if @sock_type == "nginx"
             ssl = require("resty.openssl.ssl").from_socket(@sock)
@@ -426,6 +433,8 @@ class Postgres
           signature = signature\lower!
           if signature\match("^md5") or signature\match("^sha1") or signature\match("sha1$") or signature\match("sha256$")
             signature = "sha256"
+          elseif signature\match("sha384")
+            signature = "sha384"
           elseif @sock_type == "nginx"
             objects = require "resty.openssl.objects"
             sigid = assert objects.txt2nid(signature)
