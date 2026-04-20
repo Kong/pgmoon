@@ -426,6 +426,8 @@ class Postgres
           signature = signature\lower!
           if signature\match("^md5") or signature\match("^sha1") or signature\match("sha1$") or signature\match("sha256$")
             signature = "sha256"
+          elseif signature\match("sha384")
+            signature = "sha384"
           elseif @sock_type == "nginx"
             objects = require "resty.openssl.objects"
             sigid = assert objects.txt2nid(signature)

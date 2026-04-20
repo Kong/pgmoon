@@ -427,6 +427,8 @@ do
             signature = signature:lower()
             if signature:match("^md5") or signature:match("^sha1") or signature:match("sha1$") or signature:match("sha256$") then
               signature = "sha256"
+            elseif signature:match("sha384") then
+              signature = "sha384"
             elseif self.sock_type == "nginx" then
               local objects = require("resty.openssl.objects")
               local sigid = assert(objects.txt2nid(signature))
