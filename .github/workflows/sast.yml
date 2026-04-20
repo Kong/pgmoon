@@ -25,10 +25,48 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      # semgrep action imports pkg_resources; install setuptools into the
-      # same Python 3.12 toolcache the Kong action will reuse below.
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: '3.12'
-      - run: python -m pip install --upgrade setuptools
-      - uses: Kong/public-shared-actions/security-actions/semgrep@1c412fcf497b6b8ae6cc3313389aa8756de68eac # semgrep@5.0.1
+      # Inline the Kong/public-shared-actions/security-actions/semgrep logic so
+      # we can install setuptools alongside semgrep. Python 3.12 no longer
+      # bundles pkg_resources, which opentelemetry-instrumentation (a semgrep
+      # transitive dep) still imports at load time.
+      - name: Install semgrep
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install semgrep==1.135.0
+      - name: SAST Scan
+        id: semgrep
+        continue-on-error: true
+        run: |
+          semgrep ci --config auto \
+            --text --text-output semgrep_${{ github.sha }}.txt \
+            --sarif -o semgrep_${{ github.sha }}.sarif \
+            --no-autofix
+      - name: Upload Semgrep to Workflow
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: semgrep_sast.zip
+          path: |
+            semgrep_${{ github.sha }}.sarif
+            semgrep_${{ github.sha }}.txt
+          if-no-files-found: warn
+      - name: Upload SARIF to GitHub Code Scanning
+        if: ${{ always() && github.event.repository.visibility == 'public' }}
+        uses: github/codeql-action/upload-sarif@51f77329afa6477de8c49fc9c7046c15b9a4e79d # v3.29.7
+        with:
+          sarif_file: semgrep_${{ github.sha }}.sarif
+          category: sast_semgrep
+      - name: Print Semgrep Output Findings to Console
+        if: always()
+        run: |
+          echo "::group::Semgrep Findings"
+          if [ -s "semgrep_${{ github.sha }}.txt" ]; then
+            echo "Semgrep Findings:"
+            cat "semgrep_${{ github.sha }}.txt"
+          else
+            echo "No findings detected by Semgrep."
+          fi
+          echo "::endgroup::"
