@@ -31,10 +31,12 @@ jobs:
       # Inline the Kong/public-shared-actions/security-actions/semgrep logic so
       # we can install setuptools alongside semgrep. Python 3.12 no longer
       # bundles pkg_resources, which opentelemetry-instrumentation (a semgrep
-      # transitive dep) still imports at load time.
+      # transitive dep) still imports at load time. setuptools >=81 removed
+      # pkg_resources, so pin to the last series that still ships it.
       - name: Install semgrep
         run: |
-          python -m pip install --upgrade pip setuptools
+          python -m pip install --upgrade pip
+          python -m pip install 'setuptools<81'
           python -m pip install semgrep==1.135.0
       - name: SAST Scan
         id: semgrep
