@@ -1211,6 +1211,8 @@ class Postgres
     if t == MSG_TYPE_B.parameter_status
       switch @sock_type
         when "nginx"
+          server_name = @config.host
+
           luasec_opts = @config.luasec_opts or @create_luasec_opts!
 
           -- version compability check to see if setclientcert is supported
@@ -1218,12 +1220,17 @@ class Postgres
             ok, err_internal = @sock\setclientcert luasec_opts.certificate, luasec_opts.key
             if not ok
               return false, err_internal
-            return @sock\sslhandshake false, nil, @config.ssl_verify
+            return @sock\sslhandshake false, server_name, @config.ssl_verify
           else
             if @sock.tlshandshake
-              return @sock\tlshandshake { verify: @config.ssl_verify, client_cert: luasec_opts.certificate, client_priv_key: luasec_opts.key }
+              return @sock\tlshandshake {
+                verify: @config.ssl_verify
+                client_cert: luasec_opts.certificate
+                client_priv_key: luasec_opts.key
+                server_name: server_name
+              }
             else
-              return @sock\sslhandshake false, nil, @config.ssl_verify
+              return @sock\sslhandshake false, server_name, @config.ssl_verify
         when "luasocket"
           @sock\sslhandshake @config.luasec_opts or @create_luasec_opts!
         when "cqueues"

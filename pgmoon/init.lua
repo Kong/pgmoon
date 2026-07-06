@@ -1229,22 +1229,24 @@ do
       if t == MSG_TYPE_B.parameter_status then
         local _exp_0 = self.sock_type
         if "nginx" == _exp_0 then
+          local server_name = self.config.host
           local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
           if self.sock.setclientcert then
             local ok, err_internal = self.sock:setclientcert(luasec_opts.certificate, luasec_opts.key)
             if not ok then
               return false, err_internal
             end
-            return self.sock:sslhandshake(false, nil, self.config.ssl_verify)
+            return self.sock:sslhandshake(false, server_name, self.config.ssl_verify)
           else
             if self.sock.tlshandshake then
               return self.sock:tlshandshake({
                 verify = self.config.ssl_verify,
                 client_cert = luasec_opts.certificate,
-                client_priv_key = luasec_opts.key
+                client_priv_key = luasec_opts.key,
+                server_name = server_name
               })
             else
-              return self.sock:sslhandshake(false, nil, self.config.ssl_verify)
+              return self.sock:sslhandshake(false, server_name, self.config.ssl_verify)
             end
           end
         elseif "luasocket" == _exp_0 then
