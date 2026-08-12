@@ -6,6 +6,11 @@ port=9999
 
 postgres_version=${DOCKER_POSTGRES_VERSION:-latest}
 
+# seconds to wait for the server to accept connections, and for a stopped
+# container to be removed, before giving up instead of spinning forever
+READY_TIMEOUT=${PGMOON_TEST_READY_TIMEOUT:-120}
+REMOVED_TIMEOUT=${PGMOON_TEST_REMOVED_TIMEOUT:-30}
+
 function makecerts {
   # https://www.postgresql.org/docs/9.5/static/ssl-tcp.html
   (
@@ -45,7 +50,16 @@ function start {
   # -v "$pgroot:/var/lib/postgresql/data" \ # this can be used to inspect logs since we'll have the server data dir available after the sever stops
 
   echo "$(tput setaf 4)Waiting for server to be ready$(tput sgr0)"
-  until (PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres PGPASSWORD=pgmoon psql -c 'SELECT pg_reload_conf()' 2> /dev/null); do :; done
+  waited=0
+  until (PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres PGPASSWORD=pgmoon psql -c 'SELECT pg_reload_conf()' 2> /dev/null); do
+    waited=$((waited + 1))
+    if [ $waited -gt $((READY_TIMEOUT * 5)) ]; then
+      echo "timed out after ${READY_TIMEOUT}s waiting for postgresql to be ready" >&2
+      docker logs pgmoon-test >&2 2>&1 | tail -20
+      return 1
+    fi
+    sleep 0.2
+  done
   echo "$(tput setaf 4)Sever is ready$(tput sgr0)"
 }
 
@@ -54,7 +68,13 @@ function stop {
 
   # docker returns before the container is actually gone, and the next `docker
   # run --name pgmoon-test` fails while it is still there
+  waited=0
   until [ -z "$(docker ps --all --quiet --filter name=^/pgmoon-test$)" ]; do
+    waited=$((waited + 1))
+    if [ $waited -gt $((REMOVED_TIMEOUT * 10)) ]; then
+      echo "timed out after ${REMOVED_TIMEOUT}s waiting for the pgmoon-test container to be removed" >&2
+      return 1
+    fi
     sleep 0.1
   done
 }
