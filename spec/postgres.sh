@@ -6,7 +6,11 @@ port=9999
 socket_dir="/tmp/pgmoon-test-socket"
 
 postgres_version=${DOCKER_POSTGRES_VERSION:-latest}
-startup_timeout=15
+
+# seconds to wait for the server to accept connections, and for a stopped
+# container to be removed, before giving up instead of spinning forever
+startup_timeout=${PGMOON_TEST_READY_TIMEOUT:-120}
+REMOVED_TIMEOUT=${PGMOON_TEST_REMOVED_TIMEOUT:-30}
 
 function fail_with_logs {
   echo "$(tput setaf 1)ERROR: $1$(tput sgr0)" >&2
@@ -35,9 +39,15 @@ function start {
   INIT_SCRIPT=""
   VOLUME_MOUNT=""
   PORT_MAPPING="-p 127.0.0.1:$port:5432/tcp"
+  SSL_ENV=""
+
+  # a container from a previous run may still be going away, starting a new one
+  # under the same name would fail with a name conflict
+  stop
 
   if [ "$1" = "ssl" ]; then
     INIT_SCRIPT="-v $(pwd)/spec/docker_enable_ssl.sh:/docker-entrypoint-initdb.d/docker_enable_ssl.sh"
+    SSL_ENV="-e PGMOON_TEST_CERT_DIGEST=${PGMOON_TEST_CERT_DIGEST:-sha384} -e PGMOON_TEST_CERT_TYPE=${PGMOON_TEST_CERT_TYPE:-rsa}"
   fi
 
   if [ "$1" = "unix" ]; then
@@ -55,6 +65,7 @@ function start {
   docker run --rm --name pgmoon-test \
     $PORT_MAPPING \
     -e POSTGRES_PASSWORD=pgmoon \
+    $SSL_ENV \
     $INIT_SCRIPT \
     $VOLUME_MOUNT \
     -d \
@@ -95,7 +106,19 @@ function start {
 }
 
 function stop {
-  docker stop pgmoon-test > /dev/null 2>&1
+  docker rm --force pgmoon-test > /dev/null 2>&1
+
+  # docker returns before the container is actually gone, and the next `docker
+  # run --name pgmoon-test` fails while it is still there
+  waited=0
+  until [ -z "$(docker ps --all --quiet --filter name=^/pgmoon-test$)" ]; do
+    waited=$((waited + 1))
+    if [ $waited -gt $((REMOVED_TIMEOUT * 10)) ]; then
+      echo "timed out after ${REMOVED_TIMEOUT}s waiting for the pgmoon-test container to be removed" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
 }
 
 function start_legacy {

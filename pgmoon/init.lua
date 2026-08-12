@@ -505,10 +505,12 @@ do
             local hash
             if sig:match("^md5") or sig:match("^sha1") or sig:match("sha1$") or sig:match("sha256$") then
               hash = "sha256"
-            elseif sig:match("sha384") then
-              hash = "sha384"
             else
-              hash = error("unsupported signature algorithm for channel binding: " .. tostring(sig))
+              local digest = sig:match("sha%d+")
+              if not (digest) then
+                error("unsupported signature algorithm for channel binding: " .. tostring(sig))
+              end
+              hash = digest
             end
             cbind_data = openssl_x509:digest(hash, "s")
           else
@@ -521,6 +523,7 @@ do
               local server_cert = self.sock:getpeercertificate()
               pem, signature = server_cert:pem(), server_cert:getsignaturename()
             end
+            local original_name = signature
             signature = signature:lower()
             local _, with_sig
             _, _, with_sig = signature:find("%-with%-(.*)")
@@ -533,7 +536,7 @@ do
               signature = "sha384"
             elseif self.sock_type == "nginx" then
               local objects = require("resty.openssl.objects")
-              local sigid = assert(objects.txt2nid(signature))
+              local sigid = assert(objects.txt2nid(original_name))
               local digest_nid = assert(objects.find_sigid_algs(sigid))
               signature = assert(objects.nid2table(digest_nid).sn)
             else
