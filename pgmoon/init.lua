@@ -417,10 +417,15 @@ do
             local hash
             if sig:match("^md5") or sig:match("^sha1") or sig:match("sha1$") or sig:match("sha256$") then
               hash = "sha256"
-            elseif sig:match("sha384") then
-              hash = "sha384"
             else
-              hash = error("unsupported signature algorithm for channel binding: " .. tostring(sig))
+              do
+                local digest = sig:match("sha%d+")
+                if digest then
+                  hash = digest
+                else
+                  hash = error("unsupported signature algorithm for channel binding: " .. tostring(sig))
+                end
+              end
             end
             cbind_data = openssl_x509:digest(hash, "s")
           else

@@ -416,8 +416,8 @@ class Postgres
           sig = openssl_x509\getSignatureName!\lower!
           hash = if sig\match("^md5") or sig\match("^sha1") or sig\match("sha1$") or sig\match("sha256$")
             "sha256"
-          elseif sig\match("sha384")
-            "sha384"
+          elseif digest = sig\match("sha%d+")
+            digest
           else
             error "unsupported signature algorithm for channel binding: " .. tostring(sig)
           openssl_x509\digest hash, "s"
