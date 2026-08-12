@@ -14,7 +14,7 @@ if rawget(_G, "ngx") then
 end
 local unpack = table.unpack or unpack
 local DEBUG = false
-local VERSION = "2.3.4.0"
+local VERSION = "2.3.5.0"
 local _len
 _len = function(thing, t)
   if t == nil then
