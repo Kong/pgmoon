@@ -433,6 +433,7 @@ do
               local server_cert = self.sock:getpeercertificate()
               pem, signature = server_cert:pem(), server_cert:getsignaturename()
             end
+            local original_name = signature
             signature = signature:lower()
             if signature:match("^md5") or signature:match("^sha1") or signature:match("sha1$") or signature:match("sha256$") then
               signature = "sha256"
@@ -440,7 +441,7 @@ do
               signature = "sha384"
             elseif self.sock_type == "nginx" then
               local objects = require("resty.openssl.objects")
-              local sigid = assert(objects.txt2nid(signature))
+              local sigid = assert(objects.txt2nid(original_name))
               local digest_nid = assert(objects.find_sigid_algs(sigid))
               signature = assert(objects.nid2table(digest_nid).sn)
             else

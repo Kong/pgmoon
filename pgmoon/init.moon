@@ -430,6 +430,9 @@ class Postgres
             server_cert = @sock\getpeercertificate()
             server_cert\pem!, server_cert\getsignaturename!
 
+          -- the name is lowercased for the matches below, keep the original
+          -- around: OBJ_txt2nid is case sensitive
+          original_name = signature
           signature = signature\lower!
           if signature\match("^md5") or signature\match("^sha1") or signature\match("sha1$") or signature\match("sha256$")
             signature = "sha256"
@@ -437,7 +440,7 @@ class Postgres
             signature = "sha384"
           elseif @sock_type == "nginx"
             objects = require "resty.openssl.objects"
-            sigid = assert objects.txt2nid(signature)
+            sigid = assert objects.txt2nid(original_name)
             digest_nid = assert objects.find_sigid_algs(sigid)
             signature = assert objects.nid2table(digest_nid).sn
           else
