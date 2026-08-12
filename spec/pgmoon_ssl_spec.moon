@@ -152,3 +152,49 @@ describe "pgmoon with server", ->
 
       pg\disconnect!
 
+
+-- SCRAM-SHA-256-PLUS hashes the server certificate with the digest of the
+-- algorithm it was signed with, so every digest needs a server of its own.
+-- A wrong digest is not silently ignored: the server rejects the exchange with
+-- "authentication exchange unsuccessful"
+certificates = {
+  {"rsa", "sha256"}, {"rsa", "sha384"}, {"rsa", "sha512"}
+  {"ec", "sha256"}, {"ec", "sha384"}, {"ec", "sha512"}
+}
+
+for {cert_type, cert_digest} in *certificates
+  describe "pgmoon with #{cert_type} #{cert_digest} signed server certificate", ->
+    setup ->
+      os.execute "PGMOON_TEST_CERT_TYPE=#{cert_type} PGMOON_TEST_CERT_DIGEST=#{cert_digest} spec/postgres.sh start ssl"
+
+      r = { psql "drop database if exists #{DB}" }
+      assert 0 == r[#r], "failed to execute psql: drop database"
+
+      r = { psql "create database #{DB}" }
+      assert 0 == r[#r], "failed to execute psql: create database"
+
+    teardown ->
+      os.execute "spec/postgres.sh stop"
+
+    socket_types = if ngx
+      {"nginx"}
+    else
+      {"luasocket", "cqueues"}
+
+    for socket_type in *socket_types
+      it "authenticates with channel binding over #{socket_type}", ->
+        pg = Postgres {
+          database: DB
+          port: PORT
+          user: USER
+          password: PASSWORD
+          host: HOST
+          ssl: true
+          :socket_type
+        }
+
+        assert pg\connect!
+        assert pg\query "select 1"
+
+        pg\disconnect!
+

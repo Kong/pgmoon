@@ -21,15 +21,22 @@ function makecerts {
 
 function start {
   INIT_SCRIPT=""
+  SSL_ENV=""
+
+  # a container from a previous run may still be going away, starting a new one
+  # under the same name would fail with a name conflict
+  stop
 
   if [ "$1" = "ssl" ]; then
     INIT_SCRIPT="-v $(pwd)/spec/docker_enable_ssl.sh:/docker-entrypoint-initdb.d/docker_enable_ssl.sh"
+    SSL_ENV="-e PGMOON_TEST_CERT_DIGEST=${PGMOON_TEST_CERT_DIGEST:-sha384} -e PGMOON_TEST_CERT_TYPE=${PGMOON_TEST_CERT_TYPE:-rsa}"
   fi
 
   echo "$(tput setaf 4)Starting postgresql $postgres_version (docker run) $1 $(tput sgr0)"
   docker run --rm --name pgmoon-test \
     -p 127.0.0.1:$port:5432/tcp \
     -e POSTGRES_PASSWORD=pgmoon \
+    $SSL_ENV \
     $INIT_SCRIPT \
     -d \
     postgres:$postgres_version > /dev/null
@@ -43,7 +50,13 @@ function start {
 }
 
 function stop {
-  docker stop pgmoon-test 2> /dev/null
+  docker rm --force pgmoon-test > /dev/null 2>&1
+
+  # docker returns before the container is actually gone, and the next `docker
+  # run --name pgmoon-test` fails while it is still there
+  until [ -z "$(docker ps --all --quiet --filter name=^/pgmoon-test$)" ]; do
+    sleep 0.1
+  done
 }
 
 function start_legacy {
