@@ -31,6 +31,8 @@ local generated = {
     "531", -- unbalanced assignment: too many values on the right
     "532", -- unbalanced assignment: too few values on the right
     "542", -- empty if branch
+    "581", -- negation of a relational op (moonc compiles `unless x == y`)
+    "612", -- line contains trailing whitespace
     "631", -- line is too long
   },
 }
