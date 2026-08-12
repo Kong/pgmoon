@@ -6,6 +6,11 @@ port=9999
 
 postgres_version=${DOCKER_POSTGRES_VERSION:-latest}
 
+# seconds to wait for the server to accept connections, and for a stopped
+# container to be removed, before giving up instead of spinning forever
+READY_TIMEOUT=${PGMOON_TEST_READY_TIMEOUT:-120}
+REMOVED_TIMEOUT=${PGMOON_TEST_REMOVED_TIMEOUT:-30}
+
 function makecerts {
   # https://www.postgresql.org/docs/9.5/static/ssl-tcp.html
   (
@@ -21,15 +26,22 @@ function makecerts {
 
 function start {
   INIT_SCRIPT=""
+  SSL_ENV=""
+
+  # a container from a previous run may still be going away, starting a new one
+  # under the same name would fail with a name conflict
+  stop
 
   if [ "$1" = "ssl" ]; then
     INIT_SCRIPT="-v $(pwd)/spec/docker_enable_ssl.sh:/docker-entrypoint-initdb.d/docker_enable_ssl.sh"
+    SSL_ENV="-e PGMOON_TEST_CERT_DIGEST=${PGMOON_TEST_CERT_DIGEST:-sha384} -e PGMOON_TEST_CERT_TYPE=${PGMOON_TEST_CERT_TYPE:-rsa}"
   fi
 
   echo "$(tput setaf 4)Starting postgresql $postgres_version (docker run) $1 $(tput sgr0)"
   docker run --rm --name pgmoon-test \
     -p 127.0.0.1:$port:5432/tcp \
     -e POSTGRES_PASSWORD=pgmoon \
+    $SSL_ENV \
     $INIT_SCRIPT \
     -d \
     postgres:$postgres_version > /dev/null
@@ -38,12 +50,33 @@ function start {
   # -v "$pgroot:/var/lib/postgresql/data" \ # this can be used to inspect logs since we'll have the server data dir available after the sever stops
 
   echo "$(tput setaf 4)Waiting for server to be ready$(tput sgr0)"
-  until (PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres PGPASSWORD=pgmoon psql -c 'SELECT pg_reload_conf()' 2> /dev/null); do :; done
+  waited=0
+  until (PGHOST=127.0.0.1 PGPORT=$port PGUSER=postgres PGPASSWORD=pgmoon psql -c 'SELECT pg_reload_conf()' 2> /dev/null); do
+    waited=$((waited + 1))
+    if [ $waited -gt $((READY_TIMEOUT * 5)) ]; then
+      echo "timed out after ${READY_TIMEOUT}s waiting for postgresql to be ready" >&2
+      docker logs pgmoon-test >&2 2>&1 | tail -20
+      return 1
+    fi
+    sleep 0.2
+  done
   echo "$(tput setaf 4)Sever is ready$(tput sgr0)"
 }
 
 function stop {
-  docker stop pgmoon-test 2> /dev/null
+  docker rm --force pgmoon-test > /dev/null 2>&1
+
+  # docker returns before the container is actually gone, and the next `docker
+  # run --name pgmoon-test` fails while it is still there
+  waited=0
+  until [ -z "$(docker ps --all --quiet --filter name=^/pgmoon-test$)" ]; do
+    waited=$((waited + 1))
+    if [ $waited -gt $((REMOVED_TIMEOUT * 10)) ]; then
+      echo "timed out after ${REMOVED_TIMEOUT}s waiting for the pgmoon-test container to be removed" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
 }
 
 function start_legacy {
