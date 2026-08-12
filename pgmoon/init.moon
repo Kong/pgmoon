@@ -1044,6 +1044,7 @@ class Postgres
           error "don't know how to do ssl handshake for socket type: #{@sock_type}"
     elseif t == MSG_TYPE_B.error or @config.ssl_required
       nil, "the server does not support SSL connections"
+
     else
       true -- no SSL support, but not required by client
 
@@ -1140,6 +1141,8 @@ class Postgres
         return "'#{(val\gsub "'", "''")}'"
       when "boolean"
         return val and "TRUE" or "FALSE"
+      when "table"
+        return "NO WAY"
 
     error "don't know how to escape value: #{val}"
 
