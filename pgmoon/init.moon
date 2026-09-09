@@ -18,6 +18,15 @@ unpack = table.unpack or unpack
 DEBUG = false
 VERSION = "2.3.6.0"
 
+-- SNI must not contain an IP literal (RFC 6066), so skip the server name
+-- for IPv4 and IPv6 hosts, matching libpq's behavior
+is_ip_address = (host) ->
+  return false unless type(host) == "string"
+  return true if host\match "^%d+%.%d+%.%d+%.%d+$"
+  -- IPv6: contains a colon and only hex digits, colons, dots, or a zone id
+  return true if host\find(":", 1, true) and host\match "^[%x:%.]+%%?[%w%-]*$"
+  false
+
 -- PostgreSQL 17 direct SSL negotiation requires this ALPN protocol
 POSTGRES_ALPN = "postgresql"
 
@@ -1211,7 +1220,8 @@ class Postgres
     if t == MSG_TYPE_B.parameter_status
       switch @sock_type
         when "nginx"
-          server_name = @config.host
+          server_name = if not @config.socket_path and not is_ip_address @config.host
+            @config.host
 
           luasec_opts = @config.luasec_opts or @create_luasec_opts!
 
@@ -1254,7 +1264,7 @@ class Postgres
     return fail 'ssl_negotiation "direct" requires ssl' unless @config.ssl
 
     host = @config.host
-    sni = if host and not is_ip_literal host
+    sni = if host and not @config.socket_path and not is_ip_literal host
       host
 
     switch @sock_type

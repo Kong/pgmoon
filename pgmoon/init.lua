@@ -15,6 +15,19 @@ end
 local unpack = table.unpack or unpack
 local DEBUG = false
 local VERSION = "2.3.6.0"
+local is_ip_address
+is_ip_address = function(host)
+  if not (type(host) == "string") then
+    return false
+  end
+  if host:match("^%d+%.%d+%.%d+%.%d+$") then
+    return true
+  end
+  if host:find(":", 1, true) and host:match("^[%x:%.]+%%?[%w%-]*$") then
+    return true
+  end
+  return false
+end
 local POSTGRES_ALPN = "postgresql"
 local DIRECT_SSL_UNSUPPORTED = "direct SSL negotiation requires ALPN support in tcpsock:sslhandshake"
 local is_ip_literal
@@ -1229,7 +1242,10 @@ do
       if t == MSG_TYPE_B.parameter_status then
         local _exp_0 = self.sock_type
         if "nginx" == _exp_0 then
-          local server_name = self.config.host
+          local server_name
+          if not self.config.socket_path and not is_ip_address(self.config.host) then
+            server_name = self.config.host
+          end
           local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
           if self.sock.setclientcert then
             local ok, err_internal = self.sock:setclientcert(luasec_opts.certificate, luasec_opts.key)
@@ -1273,7 +1289,7 @@ do
       end
       local host = self.config.host
       local sni
-      if host and not is_ip_literal(host) then
+      if host and not self.config.socket_path and not is_ip_literal(host) then
         sni = host
       end
       local _exp_0 = self.sock_type

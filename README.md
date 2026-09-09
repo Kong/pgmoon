@@ -148,7 +148,7 @@ Available options:
 * `"user"`: the database username to authenticate (default: `"postgres"`)
 * `"password"`: password for authentication, may be required depending on server configuration
 * `"ssl"`: enable ssl (default: `false`)
-* `"ssl_verify"`: verify server certificate (default: `nil`)
+* `"ssl_verify"`: verify server certificate (default: `nil`). With the nginx socket type, the certificate is also checked against `host` unless `host` is an IP address, in which case only the certificate chain is verified
 * `"ssl_required"`: abort the connection if the server does not support SSL connections (default: `nil`)
 * `"ssl_negotiation"`: how to start SSL, `"postgres"` or `"direct"` (default: `"postgres"`). See [Direct SSL negotiation](#direct-ssl-negotiation)
 * `"socket_type"`: the type of socket to use, one of: `"nginx"`, `"luasocket"`, `"cqueues"` (default: `"nginx"` if in nginx, `"luasocket"` otherwise)
