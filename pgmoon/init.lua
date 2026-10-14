@@ -15,6 +15,46 @@ end
 local unpack = table.unpack or unpack
 local DEBUG = false
 local VERSION = "2.3.5.0"
+local POSTGRES_ALPN = "postgresql"
+local DIRECT_SSL_UNSUPPORTED = "direct SSL negotiation requires ALPN support in tcpsock:sslhandshake"
+local is_ip_literal
+is_ip_literal = function(host)
+  if host:match("^%d+%.%d+%.%d+%.%d+$") then
+    return true
+  end
+  if host:find(":", 1, true) then
+    return true
+  end
+  return false
+end
+local alpn_selected_buf
+local get_nginx_alpn_selected
+get_nginx_alpn_selected = function(sock)
+  local ffi = require("ffi")
+  if not (alpn_selected_buf) then
+    pcall(ffi.cdef, [[      void SSL_get0_alpn_selected(const void *ssl, const unsigned char **data,
+                                  unsigned int *len);
+    ]])
+    alpn_selected_buf = {
+      data = ffi.new("const unsigned char *[1]"),
+      len = ffi.new("unsigned int[1]")
+    }
+  end
+  local ok, openssl_ssl = pcall(require, "resty.openssl.ssl")
+  if not (ok) then
+    return nil, "lua-resty-openssl is required to verify the negotiated ALPN protocol"
+  end
+  local conn, err = openssl_ssl.from_socket(sock)
+  if not (conn) then
+    return nil, err
+  end
+  ffi.C.SSL_get0_alpn_selected(conn.ctx, alpn_selected_buf.data, alpn_selected_buf.len)
+  local len = alpn_selected_buf.len[0]
+  if len == 0 then
+    return false
+  end
+  return ffi.string(alpn_selected_buf.data[0], len)
+end
 local _len
 _len = function(thing, t)
   if t == nil then
@@ -150,7 +190,8 @@ do
       user = "postgres",
       host = "127.0.0.1",
       port = "5432",
-      ssl = false
+      ssl = false,
+      ssl_negotiation = "postgres"
     },
     type_serializers = {
       string = function(self, v)
@@ -245,11 +286,22 @@ do
       return self:set_type_deserializer(tonumber(res.oid), "hstore")
     end,
     connect = function(self)
+      local direct_ssl = self.config.ssl_negotiation == "direct"
+      if not (direct_ssl or self.config.ssl_negotiation == "postgres") then
+        return nil, "invalid ssl_negotiation: " .. tostring(self.config.ssl_negotiation) .. " (expected \"postgres\" or \"direct\")"
+      end
+      if direct_ssl and not self.config.ssl then
+        return nil, "ssl_negotiation \"direct\" requires ssl"
+      end
       local connect_opts
       local _exp_0 = self.sock_type
       if "nginx" == _exp_0 then
+        local default_pool = tostring(self.config.host) .. ":" .. tostring(self.config.port) .. ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user)
+        if direct_ssl then
+          default_pool = default_pool .. ":direct"
+        end
         connect_opts = {
-          pool = self.config.pool_name or tostring(self.config.host) .. ":" .. tostring(self.config.port) .. ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user),
+          pool = self.config.pool_name or default_pool,
           pool_size = self.config.pool_size,
           backlog = self.config.backlog
         }
@@ -261,7 +313,11 @@ do
       if self.sock:getreusedtimes() == 0 then
         if self.config.ssl then
           local success
-          success, err = self:send_ssl_message()
+          if direct_ssl then
+            success, err = self:direct_ssl_handshake()
+          else
+            success, err = self:send_ssl_message()
+          end
           if not (success) then
             return nil, err
           end
@@ -1063,6 +1119,80 @@ do
       else
         return true
       end
+    end,
+    direct_ssl_handshake = function(self)
+      local host = self.config.host
+      local sni
+      if host and not is_ip_literal(host) then
+        sni = host
+      end
+      local selected
+      local _exp_0 = self.sock_type
+      if "nginx" == _exp_0 then
+        if not (self.sock.setclientcert) then
+          return nil, DIRECT_SSL_UNSUPPORTED
+        end
+        local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
+        local ok, err = self.sock:setclientcert(luasec_opts.certificate, luasec_opts.key)
+        if not (ok) then
+          return nil, err
+        end
+        local call_ok, res, handshake_err = pcall(self.sock.sslhandshake, self.sock, false, sni, self.config.ssl_verify, false, {
+          POSTGRES_ALPN
+        })
+        if not (call_ok) then
+          if tostring(res):find("expecting 1 ~ 5 arguments", 1, true) then
+            return nil, DIRECT_SSL_UNSUPPORTED
+          end
+          error(res, 0)
+        end
+        if not (res) then
+          return nil, handshake_err
+        end
+        selected, err = get_nginx_alpn_selected(self.sock)
+        if selected == nil then
+          return nil, err
+        end
+      elseif "luasocket" == _exp_0 then
+        local opts
+        do
+          local _tbl_0 = { }
+          for k, v in pairs(self.config.luasec_opts or self:create_luasec_opts()) do
+            _tbl_0[k] = v
+          end
+          opts = _tbl_0
+        end
+        opts.alpn = POSTGRES_ALPN
+        opts.sni = sni
+        local ok, err = self.sock:sslhandshake(opts)
+        if not (ok) then
+          return nil, err
+        end
+        selected = self.sock:getalpn()
+      elseif "cqueues" == _exp_0 then
+        local openssl_ssl = require("openssl.ssl")
+        local ctx = self.config.cqueues_openssl_context or self:create_cqueues_openssl_context()
+        ctx = ctx or require("openssl.ssl.context").new()
+        local conn = openssl_ssl.new(ctx)
+        if sni then
+          conn:setHostName(sni)
+        end
+        conn:setAlpnProtos({
+          POSTGRES_ALPN
+        })
+        local ok, err = self.sock:starttls(conn)
+        if not (ok) then
+          return nil, err
+        end
+        selected = self.sock:getalpnselected()
+      else
+        error("don't know how to do ssl handshake for socket type: " .. tostring(self.sock_type))
+      end
+      if not (selected == POSTGRES_ALPN) then
+        self.sock:close()
+        return nil, "server did not select ALPN protocol \"" .. tostring(POSTGRES_ALPN) .. "\" in direct SSL negotiation"
+      end
+      return true
     end,
     send_messages = function(self, messages)
       local data

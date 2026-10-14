@@ -48,8 +48,14 @@ create_luasocket = do
       for k,v in pairs opts
         params[k] = v
 
+      -- sni is not a LuaSec context parameter, it is set on the connection
+      sni = params.sni
+      params.sni = nil
+
       sec_sock, err = ssl.wrap @sock, params
       return false, err unless sec_sock
+
+      sec_sock\sni sni if sni
 
       success, err = sec_sock\dohandshake!
       return false, err unless success

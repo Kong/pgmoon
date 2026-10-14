@@ -198,3 +198,137 @@ for {cert_type, cert_digest} in *certificates
 
         pg\disconnect!
 
+
+
+DIRECT_SSL_UNSUPPORTED = "direct SSL negotiation requires ALPN support in tcpsock:sslhandshake"
+
+direct_socket_types = if ngx
+  {"nginx"}
+else
+  {"luasocket", "cqueues"}
+
+new_direct = (socket_type, opts={}) ->
+  config = {
+    database: DB
+    port: PORT
+    user: USER
+    password: PASSWORD
+    host: HOST
+    ssl: true
+    ssl_negotiation: "direct"
+    :socket_type
+  }
+
+  for k, v in pairs opts
+    config[k] = v
+
+  Postgres config
+
+-- a stock OpenResty cannot send ALPN from a cosocket, so the nginx tests
+-- check for the clear error there instead of the handshake
+connect_direct = (pg, socket_type) ->
+  ok, err = pg\connect!
+  if not ok and socket_type == "nginx" and err == DIRECT_SSL_UNSUPPORTED
+    pending "this OpenResty has no ALPN support in tcpsock:sslhandshake"
+
+  ok, err
+
+describe "pgmoon direct ssl negotiation", ->
+  setup ->
+    -- direct negotiation needs PostgreSQL 17 or newer, whatever the matrix runs
+    os.execute "DOCKER_POSTGRES_VERSION=17 spec/postgres.sh start ssl"
+
+    r = { psql "drop database if exists #{DB}" }
+    assert 0 == r[#r], "failed to execute psql: drop database"
+
+    r = { psql "create database #{DB}" }
+    assert 0 == r[#r], "failed to execute psql: create database"
+
+  teardown ->
+    os.execute "spec/postgres.sh stop"
+
+  for socket_type in *direct_socket_types
+    describe socket_type, ->
+      it "connects and authenticates", ->
+        pg = new_direct socket_type
+        assert connect_direct pg, socket_type
+
+        res = assert pg\query [[SELECT ssl, version FROM pg_stat_ssl WHERE pid = pg_backend_pid()]]
+        assert.same true, res[1].ssl
+        assert.same "TLSv1.3", res[1].version
+
+        pg\disconnect!
+
+      -- ngx cosockets take the TLS version from lua_ssl_protocols instead
+      tls12 = switch socket_type
+        when "luasocket" then "tlsv1_2"
+        when "cqueues" then "TLSv1_2"
+
+      it "keeps the configured TLS version", ->
+        pending "ssl_version does not apply to ngx cosockets" unless tls12
+        pg = new_direct socket_type, ssl_version: tls12
+        assert connect_direct pg, socket_type
+
+        res = assert pg\query [[SELECT version FROM pg_stat_ssl WHERE pid = pg_backend_pid()]]
+        assert.same "TLSv1.2", res[1].version
+
+        pg\disconnect!
+
+  describe "configuration", ->
+    it "requires ssl", ->
+      pg = new_direct direct_socket_types[1], ssl: false
+      assert.same {nil, 'ssl_negotiation "direct" requires ssl'}, {pg\connect!}
+
+    it "rejects an unknown mode", ->
+      pg = new_direct direct_socket_types[1], ssl_negotiation: "starttls"
+      assert.same {
+        nil
+        'invalid ssl_negotiation: starttls (expected "postgres" or "direct")'
+      }, {pg\connect!}
+
+
+describe "pgmoon direct ssl negotiation against a server older than 17", ->
+  setup ->
+    os.execute "DOCKER_POSTGRES_VERSION=16 spec/postgres.sh start ssl"
+
+  teardown ->
+    os.execute "spec/postgres.sh stop"
+
+  for socket_type in *direct_socket_types
+    it "fails over #{socket_type} with no fallback", ->
+      pg = new_direct socket_type, database: "postgres"
+      ok, err = connect_direct pg, socket_type
+      assert.falsy ok
+      assert.truthy err
+
+
+describe "pgmoon direct ssl negotiation against a server without ALPN", ->
+  -- a TLS server that is not PostgreSQL and does not select an ALPN
+  -- protocol. libpq refuses such a server, pgmoon must too.
+  TLS_PORT = "9998"
+  base = os.tmpname!
+
+  -- os.execute returns true in Lua 5.2+ and 0 in Lua 5.1
+  succeeded = (r) -> r == true or r == 0
+
+  setup ->
+    assert succeeded os.execute "openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout #{base}.key -out #{base}.crt > /dev/null 2>&1"
+    os.execute "openssl s_server -quiet -accept #{TLS_PORT} -cert #{base}.crt -key #{base}.key > /dev/null 2>&1 &"
+
+    for _ = 1, 50
+      break if succeeded os.execute "nc -z 127.0.0.1 #{TLS_PORT} 2> /dev/null"
+      os.execute "sleep 0.1"
+
+  teardown ->
+    os.execute "pkill -f 'openssl s_server -quiet -accept #{TLS_PORT}'"
+    os.remove "#{base}.crt"
+    os.remove "#{base}.key"
+    os.remove base
+
+  for socket_type in *direct_socket_types
+    it "refuses the connection over #{socket_type}", ->
+      pg = new_direct socket_type, port: TLS_PORT
+      assert.same {
+        nil
+        'server did not select ALPN protocol "postgresql" in direct SSL negotiation'
+      }, {connect_direct pg, socket_type}

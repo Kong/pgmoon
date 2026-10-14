@@ -144,6 +144,7 @@ Available options:
 * `"ssl"`: enable ssl (default: `false`)
 * `"ssl_verify"`: verify server certificate (default: `nil`)
 * `"ssl_required"`: abort the connection if the server does not support SSL connections (default: `nil`)
+* `"ssl_negotiation"`: how to start SSL, `"postgres"` or `"direct"` (default: `"postgres"`). See [Direct SSL negotiation](#direct-ssl-negotiation)
 * `"socket_type"`: the type of socket to use, one of: `"nginx"`, `"luasocket"`, `cqueues` (default: `"nginx"` if in nginx, `"luasocket"` otherwise)
 * `"application_name"`: set the name of the connection as displayed in `pg_stat_activity`. (default: `"pgmoon"`)
 * `"pool"`: (OpenResty only) name of pool to use when using OpenResty cosocket (default: `"#{host}:#{port}:#{database}"`)
@@ -444,6 +445,37 @@ assert(pg:connect())
 In OpenResty, make sure to configure the
 [lua_ssl_trusted_certificate](https://github.com/openresty/lua-nginx-module#lua_ssl_trusted_certificate)
 directive if you wish to verify the server certificate.
+
+### Direct SSL negotiation
+
+By default, pgmoon sends an `SSLRequest` message in plain text and starts TLS
+only after the server agrees. PostgreSQL 17 and newer also accept direct SSL
+negotiation, where the client starts the TLS handshake right after it opens
+the TCP connection. Proxies that route TLS by SNI need this mode.
+
+```lua
+local pg = pgmoon.new({
+  host = "db.example.com",
+  ssl = true,
+  ssl_negotiation = "direct", -- PostgreSQL 17+ only
+  ssl_verify = true,
+})
+```
+
+This mode works like libpq `sslnegotiation=direct`:
+
+* It requires `ssl = true`. SSL is always required, so there is no fallback to
+  plain text or to the `SSLRequest` negotiation.
+* pgmoon sends the ALPN protocol `postgresql`. It refuses the connection if the
+  server does not select it.
+* pgmoon sends `host` as SNI, unless `host` is an IP address.
+* A server older than PostgreSQL 17 rejects the connection.
+
+In OpenResty, `tcpsock:sslhandshake` must support the `alpn` argument. Stock
+OpenResty does not support it yet, and pgmoon then returns the error
+`direct SSL negotiation requires ALPN support in tcpsock:sslhandshake`. Kong
+Gateway ships an OpenResty with this support. In OpenResty, `ssl_verify = true`
+also verifies that the server certificate matches `host`.
 
 ## Authentication types
 

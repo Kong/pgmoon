@@ -28,6 +28,10 @@ do
       local ssl = assert(self.sock:checktls())
       return assert(ssl:getPeerCertificate(), "no peer certificate available")
     end,
+    getalpnselected = function(self)
+      local ssl = assert(self.sock:checktls())
+      return ssl:getAlpnSelected()
+    end,
     send = function(self, ...)
       return self.sock:write(flatten(...))
     end,

@@ -54,9 +54,14 @@ do
       for k, v in pairs(opts) do
         params[k] = v
       end
+      local sni = params.sni
+      params.sni = nil
       local sec_sock, err = ssl.wrap(self.sock, params)
       if not (sec_sock) then
         return false, err
+      end
+      if sni then
+        sec_sock:sni(sni)
       end
       local success
       success, err = sec_sock:dohandshake()

@@ -18,6 +18,49 @@ unpack = table.unpack or unpack
 DEBUG = false
 VERSION = "2.3.5.0"
 
+-- PostgreSQL 17 direct SSL negotiation requires this ALPN protocol
+POSTGRES_ALPN = "postgresql"
+
+DIRECT_SSL_UNSUPPORTED = "direct SSL negotiation requires ALPN support in tcpsock:sslhandshake"
+
+-- RFC 6066 does not allow an IP literal as SNI. A host with ":" is an IPv6
+-- literal or a unix domain socket path, and neither takes SNI.
+is_ip_literal = (host) ->
+  return true if host\match "^%d+%.%d+%.%d+%.%d+$"
+  return true if host\find ":", 1, true
+  false
+
+-- reads the protocol the server selected on an ngx cosocket
+local alpn_selected_buf
+get_nginx_alpn_selected = (sock) ->
+  ffi = require "ffi"
+
+  unless alpn_selected_buf
+    -- another library may have declared it already, a second cdef raises
+    pcall ffi.cdef, [[
+      void SSL_get0_alpn_selected(const void *ssl, const unsigned char **data,
+                                  unsigned int *len);
+    ]]
+
+    alpn_selected_buf = {
+      data: ffi.new "const unsigned char *[1]"
+      len: ffi.new "unsigned int[1]"
+    }
+
+  ok, openssl_ssl = pcall require, "resty.openssl.ssl"
+  unless ok
+    return nil, "lua-resty-openssl is required to verify the negotiated ALPN protocol"
+
+  conn, err = openssl_ssl.from_socket sock
+  return nil, err unless conn
+
+  ffi.C.SSL_get0_alpn_selected conn.ctx, alpn_selected_buf.data, alpn_selected_buf.len
+
+  len = alpn_selected_buf.len[0]
+  return false if len == 0
+
+  ffi.string alpn_selected_buf.data[0], len
+
 _len = (thing, t=type(thing)) ->
   switch t
     when "string"
@@ -145,6 +188,7 @@ class Postgres
     host: "127.0.0.1"
     port: "5432"
     ssl: false
+    ssl_negotiation: "postgres"
   }
 
   -- convert a lua value to pg_type.oid, string representation used for sending
@@ -235,6 +279,7 @@ class Postgres
   -- socket_type: type of socket to use (nginx, luasocket, cqueues)
   -- ssl: enable ssl connections
   -- ssl_verify: verify the certificate
+  -- ssl_negotiation: "postgres" (default) sends SSLRequest before TLS, "direct" starts TLS right away (PostgreSQL 17+, requires ssl)
   -- cqueues_openssl_context: manually created openssl.ssl.context for cqueues sockets
   -- luasec_opts: manually created options for LuaSocket ssl connections
   new: (@_config={}) =>
@@ -253,10 +298,23 @@ class Postgres
     @sock, @sock_type = socket.new @config.socket_type
 
   connect: =>
+    direct_ssl = @config.ssl_negotiation == "direct"
+    unless direct_ssl or @config.ssl_negotiation == "postgres"
+      return nil, "invalid ssl_negotiation: #{@config.ssl_negotiation} (expected \"postgres\" or \"direct\")"
+
+    if direct_ssl and not @config.ssl
+      return nil, "ssl_negotiation \"direct\" requires ssl"
+
     connect_opts = switch @sock_type
       when "nginx"
+        default_pool = "#{@config.host}:#{@config.port}:#{@config.database}:#{@config.user}"
+
+        -- keep direct connections out of the pool of the legacy negotiation,
+        -- without renaming the pool of existing configurations
+        default_pool ..= ":direct" if direct_ssl
+
         {
-          pool: @config.pool_name or "#{@config.host}:#{@config.port}:#{@config.database}:#{@config.user}"
+          pool: @config.pool_name or default_pool
           pool_size: @config.pool_size
           backlog: @config.backlog
         }
@@ -266,7 +324,11 @@ class Postgres
 
     if @sock\getreusedtimes! == 0
       if @config.ssl
-        success, err = @send_ssl_message!
+        success, err = if direct_ssl
+          @direct_ssl_handshake!
+        else
+          @send_ssl_message!
+
         return nil, err unless success
 
       success, err = @send_startup_message!
@@ -1046,6 +1108,77 @@ class Postgres
       nil, "the server does not support SSL connections"
     else
       true -- no SSL support, but not required by client
+
+  -- PostgreSQL 17 direct SSL negotiation: start TLS right after the TCP
+  -- connect instead of sending SSLRequest first. There is no fallback to the
+  -- legacy negotiation or to plain text.
+  direct_ssl_handshake: =>
+    host = @config.host
+    sni = if host and not is_ip_literal host
+      host
+
+    local selected
+    switch @sock_type
+      when "nginx"
+        unless @sock.setclientcert
+          return nil, DIRECT_SSL_UNSUPPORTED
+
+        luasec_opts = @config.luasec_opts or @create_luasec_opts!
+        ok, err = @sock\setclientcert luasec_opts.certificate, luasec_opts.key
+        return nil, err unless ok
+
+        -- passing server_name with ssl_verify also verifies the certificate
+        -- hostname, as libpq sslmode=verify-full does
+        call_ok, res, handshake_err = pcall @sock.sslhandshake, @sock, false, sni,
+          @config.ssl_verify, false, { POSTGRES_ALPN }
+
+        unless call_ok
+          -- an OpenResty without ALPN support rejects the extra argument
+          if tostring(res)\find "expecting 1 ~ 5 arguments", 1, true
+            return nil, DIRECT_SSL_UNSUPPORTED
+
+          error res, 0
+
+        return nil, handshake_err unless res
+
+        selected, err = get_nginx_alpn_selected @sock
+        return nil, err if selected == nil
+
+      when "luasocket"
+        opts = { k, v for k, v in pairs(@config.luasec_opts or @create_luasec_opts!) }
+        opts.alpn = POSTGRES_ALPN
+        opts.sni = sni
+
+        ok, err = @sock\sslhandshake opts
+        return nil, err unless ok
+
+        selected = @sock\getalpn!
+
+      when "cqueues"
+        openssl_ssl = require "openssl.ssl"
+
+        ctx = @config.cqueues_openssl_context or @create_cqueues_openssl_context!
+        ctx or= require("openssl.ssl.context").new!
+
+        -- set ALPN and SNI on the connection, not on a context the caller may share
+        conn = openssl_ssl.new ctx
+        conn\setHostName sni if sni
+        conn\setAlpnProtos { POSTGRES_ALPN }
+
+        ok, err = @sock\starttls conn
+        return nil, err unless ok
+
+        selected = @sock\getalpnselected!
+
+      else
+        error "don't know how to do ssl handshake for socket type: #{@sock_type}"
+
+    -- like libpq, refuse a TLS server that did not agree to speak postgresql
+    unless selected == POSTGRES_ALPN
+      @sock\close!
+      return nil, "server did not select ALPN protocol \"#{POSTGRES_ALPN}\" in direct SSL negotiation"
+
+    true
 
   -- send multiple messages all together. There is a substantial overhead from
   -- sending messages one at a time, so this should be used if we can safely
