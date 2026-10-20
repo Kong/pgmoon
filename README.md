@@ -471,7 +471,7 @@ This mode works like libpq `sslnegotiation=direct`:
 * pgmoon sends `host` as SNI, unless `host` is an IP address.
 * A server older than PostgreSQL 17 rejects the connection.
 
-In OpenResty, `tcpsock:sslhandshake` must support the `alpn` argument. Stock
+In OpenResty, `tcpsock:sslhandshake` must support the `alpn_protos` argument. Stock
 OpenResty does not support it yet, and pgmoon then returns the error
 `direct SSL negotiation requires ALPN support in tcpsock:sslhandshake`. Kong
 Gateway ships an OpenResty with this support. In OpenResty, `ssl_verify = true`

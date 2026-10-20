@@ -1,4 +1,35 @@
 
+-- reads the protocol the server selected on an ngx cosocket: a string,
+-- false when none, or nil and an error
+local alpn_buf
+nginx_getalpnselected = =>
+  unless @getsslpointer
+    return nil, "tcpsock:getsslpointer is required to read the negotiated ALPN protocol"
+
+  ssl, err = @getsslpointer!
+  return nil, err unless ssl
+
+  ffi = require "ffi"
+
+  unless alpn_buf
+    -- another library may have declared it already, a second cdef raises
+    pcall ffi.cdef, [[
+      void SSL_get0_alpn_selected(const void *ssl, const unsigned char **data,
+                                  unsigned int *len);
+    ]]
+
+    alpn_buf = {
+      data: ffi.new "const unsigned char *[1]"
+      len: ffi.new "unsigned int[1]"
+    }
+
+  ffi.C.SSL_get0_alpn_selected ssl, alpn_buf.data, alpn_buf.len
+
+  len = alpn_buf.len[0]
+  return false if len == 0
+
+  ffi.string alpn_buf.data[0], len
+
 -- creates a luasocket socket proxy to make it behave like ngx.socket.tcp
 create_luasocket = do
   import flatten from require "pgmoon.util"
@@ -36,7 +67,8 @@ create_luasocket = do
     -- socket is connecting for the first time
     getreusedtimes: (t) => 0
 
-    sslhandshake: (opts={}) =>
+    -- sni is only for direct SSL negotiation, so luasec_opts work as before
+    sslhandshake: (opts={}, sni) =>
       ssl = require "ssl"
       params = {
         mode: "client"
@@ -47,10 +79,6 @@ create_luasocket = do
 
       for k,v in pairs opts
         params[k] = v
-
-      -- sni is not a LuaSec context parameter, it is set on the connection
-      sni = params.sni
-      params.sni = nil
 
       sec_sock, err = ssl.wrap @sock, params
       return false, err unless sec_sock
@@ -68,6 +96,8 @@ create_luasocket = do
       @sock = sec_sock
 
       true
+
+    getalpnselected: => @sock\getalpn!
   }
 
   (...) ->
@@ -96,7 +126,9 @@ create_luasocket = do
 
     socket = switch socket_type
       when "nginx"
-        ngx.socket.tcp!
+        sock = ngx.socket.tcp!
+        sock.getalpnselected = nginx_getalpnselected
+        sock
       when "luasocket"
         create_luasocket!
       when "cqueues"

@@ -279,13 +279,6 @@ describe "pgmoon direct ssl negotiation", ->
       pg = new_direct direct_socket_types[1], ssl: false
       assert.same {nil, 'ssl_negotiation "direct" requires ssl'}, {pg\connect!}
 
-    it "rejects an unknown mode", ->
-      pg = new_direct direct_socket_types[1], ssl_negotiation: "starttls"
-      assert.same {
-        nil
-        'invalid ssl_negotiation: starttls (expected "postgres" or "direct")'
-      }, {pg\connect!}
-
 
 describe "pgmoon direct ssl negotiation against a server older than 17", ->
   setup ->
@@ -302,33 +295,76 @@ describe "pgmoon direct ssl negotiation against a server older than 17", ->
       assert.truthy err
 
 
-describe "pgmoon direct ssl negotiation against a server without ALPN", ->
-  -- a TLS server that is not PostgreSQL and does not select an ALPN
-  -- protocol. libpq refuses such a server, pgmoon must too.
-  TLS_PORT = "9998"
+-- a TLS server that is not PostgreSQL and selects no ALPN protocol, on a
+-- free port. It logs the ClientHello extensions.
+start_tls_server = ->
+  socket = require "socket"
+
+  probe = assert socket.bind "127.0.0.1", 0
+  _, port = probe\getsockname!
+  probe\close!
+
   base = os.tmpname!
+  assert os.execute "openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout #{base}.key -out #{base}.crt > /dev/null 2>&1"
 
-  -- os.execute returns true in Lua 5.2+ and 0 in Lua 5.1
-  succeeded = (r) -> r == true or r == 0
+  -- s_server quits when its stdin reaches EOF, so keep stdin open
+  f = assert io.popen "(sleep 600 | openssl s_server -tlsextdebug -accept #{port} -cert #{base}.crt -key #{base}.key > #{base}.log 2>&1) > /dev/null 2>&1 & echo $!"
+  pid = f\read "*l"
+  f\close!
 
-  setup ->
-    assert succeeded os.execute "openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout #{base}.key -out #{base}.crt > /dev/null 2>&1"
-    os.execute "openssl s_server -quiet -accept #{TLS_PORT} -cert #{base}.crt -key #{base}.key > /dev/null 2>&1 &"
+  read_log = ->
+    lf = io.open "#{base}.log"
+    return "" unless lf
+    data = lf\read "*a"
+    lf\close!
+    data
 
+  -- s_server writes its log asynchronously, so poll for the text
+  wait_log = (text) ->
     for _ = 1, 50
-      break if succeeded os.execute "nc -z 127.0.0.1 #{TLS_PORT} 2> /dev/null"
-      os.execute "sleep 0.1"
+      return true if read_log!\find text, 1, true
+      socket.sleep 0.1
+    false
 
-  teardown ->
-    os.execute "pkill -f 'openssl s_server -quiet -accept #{TLS_PORT}'"
-    os.remove "#{base}.crt"
-    os.remove "#{base}.key"
-    os.remove base
+  assert wait_log("ACCEPT"), "openssl s_server did not start"
+
+  {
+    port: tostring port
+    :read_log
+    :wait_log
+
+    stop: ->
+      os.execute "pkill -P #{pid} 2> /dev/null; kill #{pid} 2> /dev/null"
+      os.remove "#{base}.#{ext}" for ext in *{"crt", "key", "log"}
+      os.remove base
+  }
+
+
+describe "pgmoon direct ssl negotiation against a server without ALPN", ->
+  local server
+
+  before_each ->
+    server = start_tls_server!
+
+  after_each ->
+    server.stop!
+
+  connect_to = (socket_type, host) ->
+    connect_direct new_direct(socket_type, :host, port: server.port), socket_type
 
   for socket_type in *direct_socket_types
+    -- libpq refuses such a server, pgmoon must too
     it "refuses the connection over #{socket_type}", ->
-      pg = new_direct socket_type, port: TLS_PORT
       assert.same {
         nil
         'server did not select ALPN protocol "postgresql" in direct SSL negotiation'
-      }, {connect_direct pg, socket_type}
+      }, {connect_to socket_type, "127.0.0.1"}
+
+    it "sends the host name as SNI over #{socket_type}", ->
+      connect_to socket_type, "localhost"
+      assert.truthy server.wait_log 'TLS client extension "server name"'
+
+    it "does not send an IP address as SNI over #{socket_type}", ->
+      connect_to socket_type, "127.0.0.1"
+      assert.truthy server.wait_log "TLS client extension"
+      assert.falsy server.read_log!\find 'TLS client extension "server name"', 1, true

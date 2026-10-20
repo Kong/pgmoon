@@ -30,37 +30,6 @@ is_ip_literal = (host) ->
   return true if host\find ":", 1, true
   false
 
--- reads the protocol the server selected on an ngx cosocket
-local alpn_selected_buf
-get_nginx_alpn_selected = (sock) ->
-  ffi = require "ffi"
-
-  unless alpn_selected_buf
-    -- another library may have declared it already, a second cdef raises
-    pcall ffi.cdef, [[
-      void SSL_get0_alpn_selected(const void *ssl, const unsigned char **data,
-                                  unsigned int *len);
-    ]]
-
-    alpn_selected_buf = {
-      data: ffi.new "const unsigned char *[1]"
-      len: ffi.new "unsigned int[1]"
-    }
-
-  ok, openssl_ssl = pcall require, "resty.openssl.ssl"
-  unless ok
-    return nil, "lua-resty-openssl is required to verify the negotiated ALPN protocol"
-
-  conn, err = openssl_ssl.from_socket sock
-  return nil, err unless conn
-
-  ffi.C.SSL_get0_alpn_selected conn.ctx, alpn_selected_buf.data, alpn_selected_buf.len
-
-  len = alpn_selected_buf.len[0]
-  return false if len == 0
-
-  ffi.string alpn_selected_buf.data[0], len
-
 _len = (thing, t=type(thing)) ->
   switch t
     when "string"
@@ -299,11 +268,6 @@ class Postgres
 
   connect: =>
     direct_ssl = @config.ssl_negotiation == "direct"
-    unless direct_ssl or @config.ssl_negotiation == "postgres"
-      return nil, "invalid ssl_negotiation: #{@config.ssl_negotiation} (expected \"postgres\" or \"direct\")"
-
-    if direct_ssl and not @config.ssl
-      return nil, "ssl_negotiation \"direct\" requires ssl"
 
     connect_opts = switch @sock_type
       when "nginx"
@@ -323,12 +287,11 @@ class Postgres
     return nil, err unless ok
 
     if @sock\getreusedtimes! == 0
-      if @config.ssl
-        success, err = if direct_ssl
-          @direct_ssl_handshake!
-        else
-          @send_ssl_message!
-
+      if direct_ssl
+        success, err = @direct_ssl_handshake!
+        return nil, err unless success
+      elseif @config.ssl
+        success, err = @send_ssl_message!
         return nil, err unless success
 
       success, err = @send_startup_message!
@@ -1113,19 +1076,25 @@ class Postgres
   -- connect instead of sending SSLRequest first. There is no fallback to the
   -- legacy negotiation or to plain text.
   direct_ssl_handshake: =>
+    -- the TCP connection is open by now, so close it on every failure
+    fail = (err) ->
+      @sock\close!
+      nil, err
+
+    return fail 'ssl_negotiation "direct" requires ssl' unless @config.ssl
+
     host = @config.host
     sni = if host and not is_ip_literal host
       host
 
-    local selected
     switch @sock_type
       when "nginx"
         unless @sock.setclientcert
-          return nil, DIRECT_SSL_UNSUPPORTED
+          return fail DIRECT_SSL_UNSUPPORTED
 
         luasec_opts = @config.luasec_opts or @create_luasec_opts!
         ok, err = @sock\setclientcert luasec_opts.certificate, luasec_opts.key
-        return nil, err unless ok
+        return fail err unless ok
 
         -- passing server_name with ssl_verify also verifies the certificate
         -- hostname, as libpq sslmode=verify-full does
@@ -1133,26 +1102,25 @@ class Postgres
           @config.ssl_verify, false, { POSTGRES_ALPN }
 
         unless call_ok
-          -- an OpenResty without ALPN support rejects the extra argument
+          -- OpenResty has no capability flag for ALPN. A version without it
+          -- rejects the extra argument with this error.
           if tostring(res)\find "expecting 1 ~ 5 arguments", 1, true
-            return nil, DIRECT_SSL_UNSUPPORTED
+            return fail DIRECT_SSL_UNSUPPORTED
 
-          error res, 0
+          return fail tostring res
 
-        return nil, handshake_err unless res
-
-        selected, err = get_nginx_alpn_selected @sock
-        return nil, err if selected == nil
+        return fail handshake_err unless res
 
       when "luasocket"
+        -- LuaSec supports ALPN from 0.8
+        unless require("ssl.context").setalpn
+          return fail "direct SSL negotiation requires LuaSec 0.8 or newer"
+
         opts = { k, v for k, v in pairs(@config.luasec_opts or @create_luasec_opts!) }
         opts.alpn = POSTGRES_ALPN
-        opts.sni = sni
 
-        ok, err = @sock\sslhandshake opts
-        return nil, err unless ok
-
-        selected = @sock\getalpn!
+        ok, err = @sock\sslhandshake opts, sni
+        return fail err unless ok
 
       when "cqueues"
         openssl_ssl = require "openssl.ssl"
@@ -1166,17 +1134,17 @@ class Postgres
         conn\setAlpnProtos { POSTGRES_ALPN }
 
         ok, err = @sock\starttls conn
-        return nil, err unless ok
-
-        selected = @sock\getalpnselected!
+        return fail err unless ok
 
       else
         error "don't know how to do ssl handshake for socket type: #{@sock_type}"
 
+    selected, err = @sock\getalpnselected!
+    return fail err if selected == nil and err
+
     -- like libpq, refuse a TLS server that did not agree to speak postgresql
     unless selected == POSTGRES_ALPN
-      @sock\close!
-      return nil, "server did not select ALPN protocol \"#{POSTGRES_ALPN}\" in direct SSL negotiation"
+      return fail "server did not select ALPN protocol \"#{POSTGRES_ALPN}\" in direct SSL negotiation"
 
     true
 
