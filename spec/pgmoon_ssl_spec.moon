@@ -298,11 +298,10 @@ describe "pgmoon direct ssl negotiation against a server older than 17", ->
 -- a TLS server that is not PostgreSQL and selects no ALPN protocol, on a
 -- free port. It logs the ClientHello extensions.
 start_tls_server = ->
-  socket = require "socket"
-
-  probe = assert socket.bind "127.0.0.1", 0
-  _, port = probe\getsockname!
-  probe\close!
+  -- the resty test job has no luasocket, so ask the OS for a free port
+  pf = assert io.popen [[python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])']]
+  port = assert tonumber pf\read "*l"
+  pf\close!
 
   base = os.tmpname!
   assert os.execute "openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost -keyout #{base}.key -out #{base}.crt > /dev/null 2>&1"
@@ -323,7 +322,7 @@ start_tls_server = ->
   wait_log = (text) ->
     for _ = 1, 50
       return true if read_log!\find text, 1, true
-      socket.sleep 0.1
+      os.execute "sleep 0.1"
     false
 
   assert wait_log("ACCEPT"), "openssl s_server did not start"
