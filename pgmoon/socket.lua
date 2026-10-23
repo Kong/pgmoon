@@ -1,3 +1,30 @@
+local alpn_buf
+local nginx_getalpnselected
+nginx_getalpnselected = function(self)
+  if not (self.getsslpointer) then
+    return nil, "tcpsock:getsslpointer is required to read the negotiated ALPN protocol"
+  end
+  local ssl, err = self:getsslpointer()
+  if not (ssl) then
+    return nil, err
+  end
+  local ffi = require("ffi")
+  if not (alpn_buf) then
+    pcall(ffi.cdef, [[      void SSL_get0_alpn_selected(const void *ssl, const unsigned char **data,
+                                  unsigned int *len);
+    ]])
+    alpn_buf = {
+      data = ffi.new("const unsigned char *[1]"),
+      len = ffi.new("unsigned int[1]")
+    }
+  end
+  ffi.C.SSL_get0_alpn_selected(ssl, alpn_buf.data, alpn_buf.len)
+  local len = alpn_buf.len[0]
+  if len == 0 then
+    return false
+  end
+  return ffi.string(alpn_buf.data[0], len)
+end
 local create_luasocket
 do
   local flatten
@@ -35,7 +62,7 @@ do
     getreusedtimes = function(self, t)
       return 0
     end,
-    sslhandshake = function(self, opts)
+    sslhandshake = function(self, opts, sni)
       if opts == nil then
         opts = { }
       end
@@ -58,6 +85,9 @@ do
       if not (sec_sock) then
         return false, err
       end
+      if sni then
+        sec_sock:sni(sni)
+      end
       local success
       success, err = sec_sock:dohandshake()
       if not (success) then
@@ -70,6 +100,9 @@ do
       end
       self.sock = sec_sock
       return true
+    end,
+    getalpnselected = function(self)
+      return self.sock:getalpn()
     end
   }
   create_luasocket = function(...)
@@ -96,7 +129,9 @@ return {
     local socket
     local _exp_0 = socket_type
     if "nginx" == _exp_0 then
-      socket = ngx.socket.tcp()
+      local sock = ngx.socket.tcp()
+      sock.getalpnselected = nginx_getalpnselected
+      socket = sock
     elseif "luasocket" == _exp_0 then
       socket = create_luasocket()
     elseif "cqueues" == _exp_0 then

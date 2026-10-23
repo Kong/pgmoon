@@ -15,6 +15,18 @@ end
 local unpack = table.unpack or unpack
 local DEBUG = false
 local VERSION = "2.3.5.0"
+local POSTGRES_ALPN = "postgresql"
+local DIRECT_SSL_UNSUPPORTED = "direct SSL negotiation requires ALPN support in tcpsock:sslhandshake"
+local is_ip_literal
+is_ip_literal = function(host)
+  if host:match("^%d+%.%d+%.%d+%.%d+$") then
+    return true
+  end
+  if host:find(":", 1, true) then
+    return true
+  end
+  return false
+end
 local _len
 _len = function(thing, t)
   if t == nil then
@@ -150,7 +162,8 @@ do
       user = "postgres",
       host = "127.0.0.1",
       port = "5432",
-      ssl = false
+      ssl = false,
+      ssl_negotiation = "postgres"
     },
     type_serializers = {
       string = function(self, v)
@@ -245,11 +258,13 @@ do
       return self:set_type_deserializer(tonumber(res.oid), "hstore")
     end,
     connect = function(self)
+      local direct_ssl = self.config.ssl_negotiation == "direct"
       local connect_opts
       local _exp_0 = self.sock_type
       if "nginx" == _exp_0 then
+        local negotiation = direct_ssl and "direct" or "postgres"
         connect_opts = {
-          pool = self.config.pool_name or tostring(self.config.host) .. ":" .. tostring(self.config.port) .. ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user),
+          pool = self.config.pool_name or tostring(self.config.host) .. ":" .. tostring(self.config.port) .. ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user) .. ":" .. tostring(negotiation),
           pool_size = self.config.pool_size,
           backlog = self.config.backlog
         }
@@ -259,7 +274,13 @@ do
         return nil, err
       end
       if self.sock:getreusedtimes() == 0 then
-        if self.config.ssl then
+        if direct_ssl then
+          local success
+          success, err = self:direct_ssl_handshake()
+          if not (success) then
+            return nil, err
+          end
+        elseif self.config.ssl then
           local success
           success, err = self:send_ssl_message()
           if not (success) then
@@ -1063,6 +1084,86 @@ do
       else
         return true
       end
+    end,
+    direct_ssl_handshake = function(self)
+      local fail
+      fail = function(err)
+        self.sock:close()
+        return nil, err
+      end
+      if not (self.config.ssl) then
+        return fail('ssl_negotiation "direct" requires ssl')
+      end
+      local host = self.config.host
+      local sni
+      if host and not is_ip_literal(host) then
+        sni = host
+      end
+      local _exp_0 = self.sock_type
+      if "nginx" == _exp_0 then
+        if not (self.sock.setclientcert) then
+          return fail(DIRECT_SSL_UNSUPPORTED)
+        end
+        local luasec_opts = self.config.luasec_opts or self:create_luasec_opts()
+        local ok, err = self.sock:setclientcert(luasec_opts.certificate, luasec_opts.key)
+        if not (ok) then
+          return fail(err)
+        end
+        local call_ok, res, handshake_err = pcall(self.sock.sslhandshake, self.sock, false, sni, self.config.ssl_verify, false, {
+          POSTGRES_ALPN
+        })
+        if not (call_ok) then
+          if tostring(res):find("expecting 1 ~ 5 arguments", 1, true) then
+            return fail(DIRECT_SSL_UNSUPPORTED)
+          end
+          return fail(tostring(res))
+        end
+        if not (res) then
+          return fail(handshake_err)
+        end
+      elseif "luasocket" == _exp_0 then
+        if not (require("ssl.context").setalpn) then
+          return fail("direct SSL negotiation requires LuaSec 0.8 or newer")
+        end
+        local opts
+        do
+          local _tbl_0 = { }
+          for k, v in pairs(self.config.luasec_opts or self:create_luasec_opts()) do
+            _tbl_0[k] = v
+          end
+          opts = _tbl_0
+        end
+        opts.alpn = POSTGRES_ALPN
+        local ok, err = self.sock:sslhandshake(opts, sni)
+        if not (ok) then
+          return fail(err)
+        end
+      elseif "cqueues" == _exp_0 then
+        local openssl_ssl = require("openssl.ssl")
+        local ctx = self.config.cqueues_openssl_context or self:create_cqueues_openssl_context()
+        ctx = ctx or require("openssl.ssl.context").new()
+        local conn = openssl_ssl.new(ctx)
+        if sni then
+          conn:setHostName(sni)
+        end
+        conn:setAlpnProtos({
+          POSTGRES_ALPN
+        })
+        local ok, err = self.sock:starttls(conn)
+        if not (ok) then
+          return fail(err)
+        end
+      else
+        error("don't know how to do ssl handshake for socket type: " .. tostring(self.sock_type))
+      end
+      local selected, err = self.sock:getalpnselected()
+      if selected == nil and err then
+        return fail(err)
+      end
+      if not (selected == POSTGRES_ALPN) then
+        return fail("server did not select ALPN protocol \"" .. tostring(POSTGRES_ALPN) .. "\" in direct SSL negotiation")
+      end
+      return true
     end,
     send_messages = function(self, messages)
       local data
