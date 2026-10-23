@@ -16,7 +16,7 @@ unpack = table.unpack or unpack
 -- https://www.postgresql.org/docs/current/protocol-message-formats.html
 
 DEBUG = false
-VERSION = "2.3.5.0"
+VERSION = "2.3.6.0"
 
 -- PostgreSQL 17 direct SSL negotiation requires this ALPN protocol
 POSTGRES_ALPN = "postgresql"

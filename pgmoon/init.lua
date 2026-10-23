@@ -14,7 +14,7 @@ if rawget(_G, "ngx") then
 end
 local unpack = table.unpack or unpack
 local DEBUG = false
-local VERSION = "2.3.5.0"
+local VERSION = "2.3.6.0"
 local POSTGRES_ALPN = "postgresql"
 local DIRECT_SSL_UNSUPPORTED = "direct SSL negotiation requires ALPN support in tcpsock:sslhandshake"
 local is_ip_literal
