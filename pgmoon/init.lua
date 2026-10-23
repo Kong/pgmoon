@@ -262,12 +262,9 @@ do
       local connect_opts
       local _exp_0 = self.sock_type
       if "nginx" == _exp_0 then
-        local default_pool = tostring(self.config.host) .. ":" .. tostring(self.config.port) .. ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user)
-        if direct_ssl then
-          default_pool = default_pool .. ":direct"
-        end
+        local negotiation = direct_ssl and "direct" or "postgres"
         connect_opts = {
-          pool = self.config.pool_name or default_pool,
+          pool = self.config.pool_name or tostring(self.config.host) .. ":" .. tostring(self.config.port) .. ":" .. tostring(self.config.database) .. ":" .. tostring(self.config.user) .. ":" .. tostring(negotiation),
           pool_size = self.config.pool_size,
           backlog = self.config.backlog
         }

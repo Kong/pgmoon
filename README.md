@@ -147,7 +147,7 @@ Available options:
 * `"ssl_negotiation"`: how to start SSL, `"postgres"` or `"direct"` (default: `"postgres"`). See [Direct SSL negotiation](#direct-ssl-negotiation)
 * `"socket_type"`: the type of socket to use, one of: `"nginx"`, `"luasocket"`, `cqueues` (default: `"nginx"` if in nginx, `"luasocket"` otherwise)
 * `"application_name"`: set the name of the connection as displayed in `pg_stat_activity`. (default: `"pgmoon"`)
-* `"pool"`: (OpenResty only) name of pool to use when using OpenResty cosocket (default: `"#{host}:#{port}:#{database}"`)
+* `"pool"`: (OpenResty only) name of pool to use when using OpenResty cosocket (default: `"#{host}:#{port}:#{database}:#{user}:#{ssl_negotiation}"`)
 * `"pool_size"`: (OpenResty only) Passed directly to OpenResty cosocket connect function, [see docs](https://github.com/openresty/lua-nginx-module#tcpsockconnect)
 * `"backlog"`: (OpenResty only) Passed directly to OpenResty cosocket connect function, [see docs](https://github.com/openresty/lua-nginx-module#tcpsockconnect)
 * `"cqueues_openssl_context"`: Manually created `opensssl.ssl.context` to use when created cqueues SSL connections

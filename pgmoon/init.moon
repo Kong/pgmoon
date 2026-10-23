@@ -271,14 +271,11 @@ class Postgres
 
     connect_opts = switch @sock_type
       when "nginx"
-        default_pool = "#{@config.host}:#{@config.port}:#{@config.database}:#{@config.user}"
-
-        -- keep direct connections out of the pool of the legacy negotiation,
-        -- without renaming the pool of existing configurations
-        default_pool ..= ":direct" if direct_ssl
+        -- keep direct and legacy connections in separate pools
+        negotiation = direct_ssl and "direct" or "postgres"
 
         {
-          pool: @config.pool_name or default_pool
+          pool: @config.pool_name or "#{@config.host}:#{@config.port}:#{@config.database}:#{@config.user}:#{negotiation}"
           pool_size: @config.pool_size
           backlog: @config.backlog
         }
