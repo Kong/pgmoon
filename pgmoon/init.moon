@@ -27,6 +27,18 @@ is_ip_address = (host) ->
   return true if host\find(":", 1, true) and host\match "^[%x:%.]+%%?[%w%-]*$"
   false
 
+-- PostgreSQL 17 direct SSL negotiation requires this ALPN protocol
+POSTGRES_ALPN = "postgresql"
+
+DIRECT_SSL_UNSUPPORTED = "direct SSL negotiation requires ALPN support in tcpsock:sslhandshake"
+
+-- RFC 6066 does not allow an IP literal as SNI. A host with ":" is an IPv6
+-- literal or a unix domain socket path, and neither takes SNI.
+is_ip_literal = (host) ->
+  return true if host\match "^%d+%.%d+%.%d+%.%d+$"
+  return true if host\find ":", 1, true
+  false
+
 _len = (thing, t=type(thing)) ->
   switch t
     when "string"
@@ -181,6 +193,7 @@ class Postgres
     port: "5432"
     ssl: false
     socket_path: nil
+    ssl_negotiation: "postgres"
   }
 
   -- convert a lua value to pg_type.oid, string representation used for sending
@@ -275,6 +288,7 @@ class Postgres
   -- socket_type: type of socket to use (nginx, luasocket, cqueues)
   -- ssl: enable ssl connections
   -- ssl_verify: verify the certificate
+  -- ssl_negotiation: "postgres" (default) sends SSLRequest before TLS, "direct" starts TLS right away (PostgreSQL 17+, requires ssl)
   -- cqueues_openssl_context: manually created openssl.ssl.context for cqueues sockets
   -- luasec_opts: manually created options for LuaSocket ssl connections
   new: (@_config={}) =>
@@ -308,10 +322,15 @@ class Postgres
     error "pgmoon: connection is busy" if @busy
     @busy = true
 
+    direct_ssl = @config.ssl_negotiation == "direct"
+
     connect_opts = switch @sock_type
       when "nginx"
+        -- keep direct and legacy connections in separate pools
+        negotiation = direct_ssl and "direct" or "postgres"
+
         {
-          pool: @config.pool_name or "#{@config.host}:#{@config.port}:#{@config.database}:#{@config.user}"
+          pool: @config.pool_name or "#{@config.host}:#{@config.port}:#{@config.database}:#{@config.user}:#{negotiation}"
           pool_size: @config.pool_size
           backlog: @config.backlog
         }
@@ -329,7 +348,12 @@ class Postgres
       return nil, err
 
     if @sock\getreusedtimes! == 0
-      if @config.ssl
+      if direct_ssl
+        success, err = @direct_ssl_handshake!
+        unless success
+          @busy = false
+          return nil, err
+      elseif @config.ssl
         success, err = @send_ssl_message!
         unless success
           @busy = false
@@ -1227,6 +1251,82 @@ class Postgres
       nil, "the server does not support SSL connections"
     else
       true -- no SSL support, but not required by client
+
+  -- PostgreSQL 17 direct SSL negotiation: start TLS right after the TCP
+  -- connect instead of sending SSLRequest first. There is no fallback to the
+  -- legacy negotiation or to plain text.
+  direct_ssl_handshake: =>
+    -- the TCP connection is open by now, so close it on every failure
+    fail = (err) ->
+      @sock\close!
+      nil, err
+
+    return fail 'ssl_negotiation "direct" requires ssl' unless @config.ssl
+
+    host = @config.host
+    sni = if host and not @config.socket_path and not is_ip_literal host
+      host
+
+    switch @sock_type
+      when "nginx"
+        unless @sock.setclientcert
+          return fail DIRECT_SSL_UNSUPPORTED
+
+        luasec_opts = @config.luasec_opts or @create_luasec_opts!
+        ok, err = @sock\setclientcert luasec_opts.certificate, luasec_opts.key
+        return fail err unless ok
+
+        -- passing server_name with ssl_verify also verifies the certificate
+        -- hostname, as libpq sslmode=verify-full does
+        call_ok, res, handshake_err = pcall @sock.sslhandshake, @sock, false, sni,
+          @config.ssl_verify, false, { POSTGRES_ALPN }
+
+        unless call_ok
+          -- OpenResty has no capability flag for ALPN. A version without it
+          -- rejects the extra argument with this error.
+          if tostring(res)\find "expecting 1 ~ 5 arguments", 1, true
+            return fail DIRECT_SSL_UNSUPPORTED
+
+          return fail tostring res
+
+        return fail handshake_err unless res
+
+      when "luasocket"
+        -- LuaSec supports ALPN from 0.8
+        unless require("ssl.context").setalpn
+          return fail "direct SSL negotiation requires LuaSec 0.8 or newer"
+
+        opts = { k, v for k, v in pairs(@config.luasec_opts or @create_luasec_opts!) }
+        opts.alpn = POSTGRES_ALPN
+
+        ok, err = @sock\sslhandshake opts, sni
+        return fail err unless ok
+
+      when "cqueues"
+        openssl_ssl = require "openssl.ssl"
+
+        ctx = @config.cqueues_openssl_context or @create_cqueues_openssl_context!
+        ctx or= require("openssl.ssl.context").new!
+
+        -- set ALPN and SNI on the connection, not on a context the caller may share
+        conn = openssl_ssl.new ctx
+        conn\setHostName sni if sni
+        conn\setAlpnProtos { POSTGRES_ALPN }
+
+        ok, err = @sock\starttls conn
+        return fail err unless ok
+
+      else
+        error "don't know how to do ssl handshake for socket type: #{@sock_type}"
+
+    selected, err = @sock\getalpnselected!
+    return fail err if selected == nil and err
+
+    -- like libpq, refuse a TLS server that did not agree to speak postgresql
+    unless selected == POSTGRES_ALPN
+      return fail "server did not select ALPN protocol \"#{POSTGRES_ALPN}\" in direct SSL negotiation"
+
+    true
 
   -- send multiple messages all together. There is a substantial overhead from
   -- sending messages one at a time, so this should be used if we can safely

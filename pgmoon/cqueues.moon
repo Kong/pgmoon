@@ -31,6 +31,11 @@ class CqueuesSocket
     ssl = assert @sock\checktls!
     assert ssl\getPeerCertificate!, "no peer certificate available"
 
+  -- returns the ALPN protocol selected by the server, or nil
+  getalpnselected: =>
+    ssl = assert @sock\checktls!
+    ssl\getAlpnSelected!
+
   send: (...) =>
     @sock\write flatten ...
 
