@@ -20,6 +20,7 @@ jobs:
       PGPASSWORD: postgres
       PGHOST: 127.0.0.1
       DOCKER_POSTGRES_VERSION: ${{ matrix.postgresVersion }}
+      KONG_TEST_IPV6_ONLY_HOSTNAME: ip6-localhost
 
     steps:
     - uses: actions/checkout@master
@@ -48,6 +49,7 @@ jobs:
 
     - name: test
       run: |
+        printf '::1 %s\n' "$KONG_TEST_IPV6_ONLY_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
         busted -o utfTerminal
 
 
@@ -65,6 +67,7 @@ jobs:
       PGPASSWORD: postgres
       PGHOST: 127.0.0.1
       DOCKER_POSTGRES_VERSION: ${{ matrix.postgresVersion }}
+      KONG_TEST_IPV6_ONLY_HOSTNAME: ip6-localhost
 
     steps:
     - uses: actions/checkout@master
@@ -81,6 +84,7 @@ jobs:
     - name: dependencies
       run: |
         luarocks install busted
+        luarocks install luasocket
         luarocks install moonscript
         luarocks install https://raw.githubusercontent.com/leafo/lua-cjson/master/lua-cjson-dev-1.rockspec
         luarocks install lua-resty-openssl
@@ -91,6 +95,7 @@ jobs:
 
     - name: test
       run: |
+        printf '::1 %s\n' "$KONG_TEST_IPV6_ONLY_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
         resty spec/resty_busted.lua
 
 

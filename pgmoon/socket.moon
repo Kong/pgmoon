@@ -30,8 +30,7 @@ nginx_getalpnselected = =>
 
   ffi.string alpn_buf.data[0], len
 
--- creates a luasocket socket proxy to make it behave like ngx.socket.tcp
-create_luasocket = do
+wrap_luasocket = do
   import flatten from require "pgmoon.util"
 
   proxy_mt = {
@@ -100,20 +99,44 @@ create_luasocket = do
     getalpnselected: => @sock\getalpn!
   }
 
-  (...) ->
-    socket = require("socket")
+  (sock) ->
     proxy = {
-      sock: socket.tcp ...
+      :sock
     }
     for k,v in pairs method_overrides
       proxy[k] = v
 
     setmetatable proxy, proxy_mt
 
+-- creates a luasocket socket proxy to make it behave like ngx.socket.tcp
+create_luasocket = (...) ->
+  socket = require("socket")
+  wrap_luasocket socket.tcp ...
+
+create_host_luasocket = (host) ->
+  return create_luasocket! unless host
+
+  socket = require("socket")
+  create_ipv4 = socket.tcp4 or socket.tcp
+  create = create_ipv4
+  addresses, err = socket.dns.getaddrinfo host
+  return nil, err unless addresses
+  for address in *addresses
+    -- Keep the existing IPv4 preference for dual-stack hosts.
+    if address.family == "inet"
+      create = create_ipv4
+      break
+    elseif address.family == "inet6"
+      create = socket.tcp6
+
+  sock, err = create!
+  return nil, err unless sock
+  wrap_luasocket sock
+
 {
   :create_luasocket
 
-  new: (socket_type) ->
+  new: (socket_type, host) ->
     if socket_type == nil
       -- TODO: this should not be the responsibility of this library
       -- TODO: write out a warning for some versions, then throw error when socket type is missing
@@ -130,7 +153,9 @@ create_luasocket = do
         sock.getalpnselected = nginx_getalpnselected
         sock
       when "luasocket"
-        create_luasocket!
+        sock, err = create_host_luasocket host
+        return nil, err unless sock
+        sock
       when "cqueues"
         require("pgmoon.cqueues").CqueuesSocket!
       else

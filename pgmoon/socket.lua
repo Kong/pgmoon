@@ -25,7 +25,7 @@ nginx_getalpnselected = function(self)
   end
   return ffi.string(alpn_buf.data[0], len)
 end
-local create_luasocket
+local wrap_luasocket
 do
   local flatten
   flatten = require("pgmoon.util").flatten
@@ -105,10 +105,9 @@ do
       return self.sock:getalpn()
     end
   }
-  create_luasocket = function(...)
-    local socket = require("socket")
+  wrap_luasocket = function(sock)
     local proxy = {
-      sock = socket.tcp(...)
+      sock = sock
     }
     for k, v in pairs(method_overrides) do
       proxy[k] = v
@@ -116,9 +115,42 @@ do
     return setmetatable(proxy, proxy_mt)
   end
 end
+local create_luasocket
+create_luasocket = function(...)
+  local socket = require("socket")
+  return wrap_luasocket(socket.tcp(...))
+end
+local create_host_luasocket
+create_host_luasocket = function(host)
+  if not (host) then
+    return create_luasocket()
+  end
+  local socket = require("socket")
+  local create_ipv4 = socket.tcp4 or socket.tcp
+  local create = create_ipv4
+  local addresses, err = socket.dns.getaddrinfo(host)
+  if not (addresses) then
+    return nil, err
+  end
+  for _index_0 = 1, #addresses do
+    local address = addresses[_index_0]
+    if address.family == "inet" then
+      create = create_ipv4
+      break
+    elseif address.family == "inet6" then
+      create = socket.tcp6
+    end
+  end
+  local sock
+  sock, err = create()
+  if not (sock) then
+    return nil, err
+  end
+  return wrap_luasocket(sock)
+end
 return {
   create_luasocket = create_luasocket,
-  new = function(socket_type)
+  new = function(socket_type, host)
     if socket_type == nil then
       if ngx and ngx.get_phase() ~= "init" then
         socket_type = "nginx"
@@ -133,7 +165,11 @@ return {
       sock.getalpnselected = nginx_getalpnselected
       socket = sock
     elseif "luasocket" == _exp_0 then
-      socket = create_luasocket()
+      local sock, err = create_host_luasocket(host)
+      if not (sock) then
+        return nil, err
+      end
+      socket = sock
     elseif "cqueues" == _exp_0 then
       socket = require("pgmoon.cqueues").CqueuesSocket()
     else

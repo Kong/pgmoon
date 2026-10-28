@@ -4,6 +4,7 @@ build:
 	moonc pgmoon
 
 test: build
+	busted spec/luasocket_ipv6_spec.lua
 	busted spec/pgmoon_spec.moon
 	sleep 1
 	busted spec/pgmoon_ssl_spec.moon
@@ -12,6 +13,7 @@ test_oauth: build
 	busted spec/pgmoon_oauth_spec.moon
 
 test_resty: build
+	resty spec/resty_busted.lua spec/luasocket_ipv6_spec.lua
 	resty spec/resty_busted.lua spec/pgmoon_spec.moon
 	sleep 1
 	resty spec/resty_busted.lua spec/pgmoon_ssl_spec.moon

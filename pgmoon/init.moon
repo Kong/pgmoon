@@ -264,9 +264,24 @@ class Postgres
     }
 
     @convert_null = @config.convert_null
-    @sock, @sock_type = socket.new @config.socket_type
+    @sock, socket_type_or_err = socket.new @config.socket_type, @config.host
+    if @sock
+      @sock_type = socket_type_or_err
+    else
+      @socket_error = socket_type_or_err
 
   connect: =>
+    unless @sock
+      @sock, socket_type_or_err = socket.new @config.socket_type, @config.host
+      unless @sock
+        @socket_error = socket_type_or_err
+        return nil, @socket_error
+      @sock_type = socket_type_or_err
+      @socket_error = nil
+      if @pending_timeout != nil
+        @sock\settimeout @pending_timeout
+        @pending_timeout = nil
+
     direct_ssl = @config.ssl_negotiation == "direct"
 
     connect_opts = switch @sock_type
@@ -303,13 +318,18 @@ class Postgres
     true
 
   settimeout: (...) =>
+    unless @sock
+      @pending_timeout = ...
+      return 1
     @sock\settimeout ...
 
   disconnect: =>
+    return nil, @socket_error unless @sock
     @send_message MSG_TYPE_F.terminate, {}
     @sock\close!
 
   keepalive: (...) =>
+    return nil, @socket_error unless @sock
     @sock\setkeepalive ...
 
   -- see: http://25thandclement.com/~william/projects/luaossl.pdf

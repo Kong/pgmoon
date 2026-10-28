@@ -258,6 +258,20 @@ do
       return self:set_type_deserializer(tonumber(res.oid), "hstore")
     end,
     connect = function(self)
+      if not (self.sock) then
+        local socket_type_or_err
+        self.sock, socket_type_or_err = socket.new(self.config.socket_type, self.config.host)
+        if not (self.sock) then
+          self.socket_error = socket_type_or_err
+          return nil, self.socket_error
+        end
+        self.sock_type = socket_type_or_err
+        self.socket_error = nil
+        if self.pending_timeout ~= nil then
+          self.sock:settimeout(self.pending_timeout)
+          self.pending_timeout = nil
+        end
+      end
       local direct_ssl = self.config.ssl_negotiation == "direct"
       local connect_opts
       local _exp_0 = self.sock_type
@@ -304,13 +318,23 @@ do
       return true
     end,
     settimeout = function(self, ...)
+      if not (self.sock) then
+        self.pending_timeout = ...
+        return 1
+      end
       return self.sock:settimeout(...)
     end,
     disconnect = function(self)
+      if not (self.sock) then
+        return nil, self.socket_error
+      end
       self:send_message(MSG_TYPE_F.terminate, { })
       return self.sock:close()
     end,
     keepalive = function(self, ...)
+      if not (self.sock) then
+        return nil, self.socket_error
+      end
       return self.sock:setkeepalive(...)
     end,
     create_cqueues_openssl_context = function(self)
@@ -1300,7 +1324,13 @@ do
         end
       })
       self.convert_null = self.config.convert_null
-      self.sock, self.sock_type = socket.new(self.config.socket_type)
+      local socket_type_or_err
+      self.sock, socket_type_or_err = socket.new(self.config.socket_type, self.config.host)
+      if self.sock then
+        self.sock_type = socket_type_or_err
+      else
+        self.socket_error = socket_type_or_err
+      end
     end,
     __base = _base_0,
     __name = "Postgres"
