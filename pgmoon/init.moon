@@ -446,8 +446,8 @@ class Postgres
           openssl_x509\digest hash, "s"
         else
           pem, signature = if @sock_type == "nginx"
-            ssl = require("resty.openssl.ssl").from_socket(@sock)
-            server_cert = ssl\get_peer_certificate()
+            ssl_sock = require("resty.openssl.ssl").from_socket(@sock)
+            server_cert = ssl_sock\get_peer_certificate()
             server_cert\to_PEM!, server_cert\get_signature_name!
           else
             server_cert = @sock\getpeercertificate()
