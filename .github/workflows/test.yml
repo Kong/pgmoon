@@ -53,7 +53,9 @@ jobs:
         busted -o TAP
 
   test_resty:
-    runs-on: ubuntu-latest
+    # The OpenResty setup action installs libpcre3-dev, which Ubuntu 26.04 (now
+    # ubuntu-latest) no longer ships. OpenResty 1.19.9.1 needs PCRE1
+    runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false

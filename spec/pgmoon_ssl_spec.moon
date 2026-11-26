@@ -38,6 +38,36 @@ describe "pgmoon with server", ->
 
       pg\disconnect!
 
+    -- This server negotiates SCRAM-SHA-256-PLUS. pgmoon parses the client
+    -- certificate with ngx.ssl on each connection, even when the server asks
+    -- for none, so channel binding must not replace ngx.ssl
+    it "connects twice with a client certificate after channel binding", ->
+      base = os.tmpname!
+      finally ->
+        os.remove "#{base}.#{ext}" for ext in *{"crt", "key"}
+        os.remove base
+
+      r = { os.execute "openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=pgmoon -keyout #{base}.key -out #{base}.crt > /dev/null 2>&1" }
+      assert 0 == r[#r], "failed to create the client certificate"
+
+      for _ = 1, 2
+        pg = Postgres {
+          database: DB
+          port: PORT
+          user: USER
+          password: PASSWORD
+          host: HOST
+          ssl: true
+          socket_type: "nginx"
+          cert: "#{base}.crt"
+          key: "#{base}.key"
+        }
+
+        assert pg\connect!
+        assert pg\query "select 1"
+
+        pg\disconnect!
+
 
   describe "luasocket", ->
     if ngx
